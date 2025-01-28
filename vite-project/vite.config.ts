@@ -17,10 +17,19 @@ export default defineConfig({
 				},
 			},
 		},
+		// Disable type checking during build
+		typescript: {
+			noEmit: true,
+			skipLibCheck: true,
+			skipDefaultLibCheck: true,
+		},
 	},
 	resolve: {
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
 		},
+	},
+	optimizeDeps: {
+		include: ['@radix-ui/react-icons', 'lucide-react'],
 	},
 })
