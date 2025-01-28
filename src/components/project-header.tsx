@@ -2,6 +2,11 @@
 
 import { Button } from "@/components/ui/button";
 import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from "@/components/ui/popover";
+import {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
@@ -9,31 +14,65 @@ import {
 } from "@/components/ui/tooltip";
 import { Download, GitForkIcon, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
+import { toast } from "sonner";
 
 interface ProjectHeaderProps {
 	onGenerate: () => Promise<void>;
 	isGenerating: boolean;
+	projectName?: string;
 }
 
 export function ProjectHeader({
 	onGenerate,
 	isGenerating,
+	projectName,
 }: ProjectHeaderProps) {
 	const [isInstalling, setIsInstalling] = useState(false);
+	const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
+	const installCommand = "npx shadcn@latest add \"https://cli.bones.sh\"";
 
 	async function handleInstall() {
 		setIsInstalling(true);
 		try {
-			// TODO: Implement shadcn install command
+			// Copy command to clipboard
+			await navigator.clipboard.writeText(installCommand);
+			// Keep popover open for a moment
 			await new Promise((resolve) => setTimeout(resolve, 1000));
 		} finally {
 			setIsInstalling(false);
+			setIsPopoverOpen(false);
 		}
 	}
 
 	async function handleDownload() {
-		// TODO: Implement project download
-		console.log("Downloading project...");
+		if (!projectName) return;
+
+		try {
+			const response = await fetch("/api/download", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ name: projectName }),
+			});
+
+			if (!response.ok) throw new Error("Download failed");
+
+			// Create a download link
+			const blob = await response.blob();
+			const url = window.URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = `${projectName}.zip`;
+			document.body.appendChild(a);
+			a.click();
+			window.URL.revokeObjectURL(url);
+			document.body.removeChild(a);
+
+			toast.success("Project downloaded successfully");
+		} catch (error) {
+			console.error("Failed to download project:", error);
+			toast.error("Failed to download project");
+		}
 	}
 
 	return (
@@ -53,24 +92,50 @@ export function ProjectHeader({
 
 					<Tooltip>
 						<TooltipTrigger asChild>
-							<Button
-								onClick={handleInstall}
-								size="sm"
-								variant="outline"
-								disabled={isInstalling}
-							>
-								{isInstalling ? (
-									<>
-										<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-										Installing...
-									</>
-								) : (
-									<>
-										<GitForkIcon className="mr-2 h-4 w-4" />
-										Add to Codebase
-									</>
-								)}
-							</Button>
+							<Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+								<PopoverTrigger asChild>
+									<Button
+										size="sm"
+										variant="outline"
+										disabled={isInstalling}
+									>
+										{isInstalling ? (
+											<>
+												<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+												Copying...
+											</>
+										) : (
+											<>
+												<GitForkIcon className="mr-2 h-4 w-4" />
+												Add to Codebase
+											</>
+										)}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent className="w-auto p-4" align="end">
+									<div className="flex flex-col gap-4">
+										<div className="text-sm">
+											Run this command in your project directory:
+										</div>
+										<div className="relative">
+											<pre className="rounded bg-muted px-4 py-3 font-mono text-sm">
+												{installCommand}
+											</pre>
+											<Button
+												size="sm"
+												className="absolute right-2 top-2"
+												onClick={handleInstall}
+											>
+												{isInstalling ? (
+													<Loader2 className="h-4 w-4 animate-spin" />
+												) : (
+													"Copy"
+												)}
+											</Button>
+										</div>
+									</div>
+								</PopoverContent>
+							</Popover>
 						</TooltipTrigger>
 						<TooltipContent>Install components to your project</TooltipContent>
 					</Tooltip>

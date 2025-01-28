@@ -268,7 +268,9 @@
 		"zod": "3.24.1",
 		"zsa": "0.6.0",
 		"zsa-react": "0.2.3",
-		"zustand": "5.0.2"
+		"zustand": "5.0.2",
+		"archiver": "^6.0.1",
+		"@types/archiver": "^6.0.2"
 	},
 	"devDependencies": {
 		"@babel/parser": "^7.24.0",
@@ -359,8 +361,9 @@
 	},
 	"pnpm": {
 		"overrides": {
-			"react": "19.0.0",
-			"react-dom": "19.0.0"
+			"react": "^18.2.0",
+			"react-dom": "^18.2.0"
 		}
-	}
+	},
+	"packageManager": "pnpm@8.15.1"
 }

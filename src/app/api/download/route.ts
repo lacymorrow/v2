@@ -1,7 +1,7 @@
-import { APP_STORAGE_PATH } from "@/server/services/app-generator";
-import archiver from "archiver";
-import { NextResponse } from "next/server";
 import path from "path";
+import path from "path";
+import { APP_STORAGE_PATH } from "@/server/services/app-generator";
+import archiver from "archiver";} from "next/server";
 
 export async function POST(request: Request) {
     try {
@@ -10,15 +10,15 @@ export async function POST(request: Request) {
 
         // Create a zip archive
         const archive = archiver("zip", {
-            zlib: { level: 9 },
+            zlib: { level: 9 }, // Maximum compression
         });
-
-        // Add the project directory to the archive
-        archive.directory(projectPath, false);
 
         // Create a buffer to store the zip
         const chunks: Uint8Array[] = [];
         archive.on("data", (chunk) => chunks.push(chunk));
+
+        // Add the project directory to the archive
+        archive.directory(projectPath, false);
 
         // Wait for the archive to finalize
         await new Promise((resolve, reject) => {
