@@ -7,8 +7,9 @@ import { useState } from "react";
 import { Button } from "./ui/button";
 
 interface FileExplorerProps {
-	selectedFile: string | null;
-	onSelectFile: (file: string) => void;
+	selectedFile?: string | null;
+	onSelectFile?: (file: string) => void;
+	projectName?: string | null;
 }
 
 interface TreeNode {
@@ -19,58 +20,6 @@ interface TreeNode {
 	children: Record<string, TreeNode>;
 }
 
-const INITIAL_TREE: TreeNode = {
-	name: "root",
-	path: "",
-	type: "directory",
-	children: {
-		src: {
-			name: "src",
-			path: "src",
-			type: "directory",
-			children: {
-				"App.tsx": {
-					name: "App.tsx",
-					path: "src/App.tsx",
-					type: "file",
-					children: {},
-				},
-				"main.tsx": {
-					name: "main.tsx",
-					path: "src/main.tsx",
-					type: "file",
-					children: {},
-				},
-				"index.css": {
-					name: "index.css",
-					path: "src/index.css",
-					type: "file",
-					children: {},
-				},
-				components: {
-					name: "components",
-					path: "src/components",
-					type: "directory",
-					children: {
-						"button.tsx": {
-							name: "button.tsx",
-							path: "src/components/button.tsx",
-							type: "file",
-							children: {},
-						},
-						"card.tsx": {
-							name: "card.tsx",
-							path: "src/components/card.tsx",
-							type: "file",
-							children: {},
-						},
-					},
-				},
-			},
-		},
-	},
-};
-
 function TreeNode({
 	node,
 	onSelectFile,
@@ -78,28 +27,12 @@ function TreeNode({
 	level = 0,
 }: {
 	node: TreeNode;
-	onSelectFile: (file: string) => void;
-	selectedFile: string | null;
+	onSelectFile?: (file: string) => void;
+	selectedFile?: string | null;
 	level?: number;
 }) {
 	const [isExpanded, setIsExpanded] = useState(true);
 	const hasChildren = Object.keys(node.children).length > 0;
-
-	if (node.name === "root") {
-		return (
-			<div className="space-y-1">
-				{Object.values(node.children).map((child) => (
-					<TreeNode
-						key={child.path}
-						node={child}
-						onSelectFile={onSelectFile}
-						selectedFile={selectedFile}
-						level={level}
-					/>
-				))}
-			</div>
-		);
-	}
 
 	return (
 		<div className="flex flex-col">
@@ -114,7 +47,7 @@ function TreeNode({
 				onClick={() => {
 					if (node.type === "directory") {
 						setIsExpanded(!isExpanded);
-					} else {
+					} else if (onSelectFile) {
 						onSelectFile(node.path);
 					}
 				}}
@@ -155,12 +88,40 @@ function TreeNode({
 export function FileExplorer({
 	selectedFile,
 	onSelectFile,
+	projectName,
 }: FileExplorerProps) {
+	const [tree] = useState<TreeNode>({
+		name: "root",
+		path: "",
+		type: "directory",
+		children: {
+			src: {
+				name: "src",
+				path: "src",
+				type: "directory",
+				children: {
+					"App.tsx": {
+						name: "App.tsx",
+						path: "src/App.tsx",
+						type: "file",
+						children: {},
+					},
+					"main.tsx": {
+						name: "main.tsx",
+						path: "src/main.tsx",
+						type: "file",
+						children: {},
+					},
+				},
+			},
+		},
+	});
+
 	return (
 		<ScrollArea className="h-full">
 			<div className="p-2">
 				<TreeNode
-					node={INITIAL_TREE}
+					node={tree}
 					onSelectFile={onSelectFile}
 					selectedFile={selectedFile}
 				/>
