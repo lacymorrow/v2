@@ -94,7 +94,19 @@ let nextConfig: NextConfig = {
 	devIndicators: {
 		// buildActivityPosition: "bottom-right" as const,
 	},
-
+	async headers() {
+		return [
+			{
+				source: '/builds/:path*',
+				headers: [
+					{
+						key: 'Cache-Control',
+						value: 'public, max-age=31536000, immutable',
+					},
+				],
+			},
+		];
+	},
 	/*
 	 * Logging configuration
 	 * @see https://nextjs.org/docs/app/api-reference/next-config-js/logging
@@ -124,14 +136,6 @@ let nextConfig: NextConfig = {
 			// Don't attempt to bundle native modules on client-side
 			config.resolve.fallback = {
 				...config.resolve.fallback,
-				bcrypt: false,
-				"node-gyp": false,
-				npm: false,
-				fs: false,
-				net: false,
-				ts: false,
-				child_process: false,
-				"@mapbox/node-pre-gyp": false
 			};
 		} else {
 			// Externalize native modules on server-side

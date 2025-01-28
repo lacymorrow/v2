@@ -11,8 +11,14 @@ import { useState } from "react";
 
 export default function HomePage() {
 	const [isGenerating, setIsGenerating] = useState(false);
-	const { projectName, projectUrl, selectedFile, fileContent, setProject, setFile } =
-		useProjectStore();
+	const {
+		projectName,
+		projectUrl,
+		selectedFile,
+		fileContent,
+		setProject,
+		setFile,
+	} = useProjectStore();
 
 	async function handleGenerate() {
 		setIsGenerating(true);
