@@ -6,10 +6,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface CodeEditorProps {
 	path: string | null;
 	content?: string;
-	onChange?: (value: string) => void;
 }
 
-export function CodeEditor({ path, content = "", onChange }: CodeEditorProps) {
+export function CodeEditor({ path, content = "" }: CodeEditorProps) {
 	if (!path) {
 		return (
 			<div className="flex h-full items-center justify-center text-muted-foreground">
@@ -34,18 +33,18 @@ export function CodeEditor({ path, content = "", onChange }: CodeEditorProps) {
 		}[extension] || "plaintext";
 
 	return (
-		<ScrollArea className="h-full">
-			<div className="p-4">
-				<CodeWindow
-					title={path}
-					code={content}
-					language={language}
-					showLineNumbers
-					theme="dark"
-					maxHeight="none"
-					variant="minimal"
-				/>
-			</div>
-		</ScrollArea>
+		<div className="h-full">
+			<CodeWindow
+				title={path}
+				code={content}
+				language={language}
+				showLineNumbers
+				theme="dark"
+				maxHeight="none"
+				variant="minimal"
+				showCopy
+				className="h-full"
+			/>
+		</div>
 	);
 }

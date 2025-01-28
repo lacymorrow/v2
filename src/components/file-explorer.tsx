@@ -2,13 +2,13 @@
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, File, Folder } from "lucide-react";
+import { ChevronDown, ChevronRight, File, Folder, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "./ui/button";
+import { useProjectStore } from "@/hooks/use-project-store";
 
 interface FileExplorerProps {
 	selectedFile?: string | null;
-	onSelectFile?: (file: string) => void;
 	projectName?: string | null;
 }
 
@@ -16,23 +16,23 @@ interface TreeNode {
 	name: string;
 	path: string;
 	type: "file" | "directory";
-	content?: string;
 	children: Record<string, TreeNode>;
 }
 
 function TreeNode({
 	node,
-	onSelectFile,
 	selectedFile,
+	projectName,
 	level = 0,
 }: {
 	node: TreeNode;
-	onSelectFile?: (file: string) => void;
 	selectedFile?: string | null;
+	projectName?: string | null;
 	level?: number;
 }) {
 	const [isExpanded, setIsExpanded] = useState(true);
 	const hasChildren = Object.keys(node.children).length > 0;
+	const { setFile } = useProjectStore();
 
 	return (
 		<div className="flex flex-col">
@@ -44,11 +44,22 @@ function TreeNode({
 					selectedFile === node.path && "bg-accent text-accent-foreground",
 				)}
 				style={{ paddingLeft: `${(level + 1) * 12}px` }}
-				onClick={() => {
+				onClick={async () => {
 					if (node.type === "directory") {
 						setIsExpanded(!isExpanded);
-					} else if (onSelectFile) {
-						onSelectFile(node.path);
+					} else if (projectName) {
+						try {
+							const response = await fetch(
+								`/api/files?path=${encodeURIComponent(
+									node.path,
+								)}&project=${encodeURIComponent(projectName)}`,
+							);
+							const data = await response.json();
+							setFile(node.path, data.content);
+						} catch (error) {
+							console.error("Failed to load file:", error);
+							setFile(node.path, "// Failed to load file contents");
+						}
 					}
 				}}
 			>
@@ -70,28 +81,41 @@ function TreeNode({
 			</Button>
 			{hasChildren && isExpanded && (
 				<div className="flex flex-col">
-					{Object.values(node.children).map((child) => (
-						<TreeNode
-							key={child.path}
-							node={child}
-							onSelectFile={onSelectFile}
-							selectedFile={selectedFile}
-							level={level + 1}
-						/>
-					))}
+					{Object.values(node.children)
+						.sort((a, b) => {
+							if (a.type === "directory" && b.type === "file") return -1;
+							if (a.type === "file" && b.type === "directory") return 1;
+							return a.name.localeCompare(b.name);
+						})
+						.map((child) => (
+							<TreeNode
+								key={child.path}
+								node={child}
+								selectedFile={selectedFile}
+								projectName={projectName}
+								level={level + 1}
+							/>
+						))}
 				</div>
 			)}
 		</div>
 	);
 }
 
-export function FileExplorer({
-	selectedFile,
-	onSelectFile,
-	projectName,
-}: FileExplorerProps) {
+export function FileExplorer({ selectedFile, projectName }: FileExplorerProps) {
+	if (!projectName) {
+		return (
+			<div className="flex h-full items-center justify-center text-muted-foreground">
+				<div className="flex flex-col items-center gap-2">
+					<Loader2 className="h-8 w-8 animate-spin" />
+					<span>Generate a project to view files</span>
+				</div>
+			</div>
+		);
+	}
+
 	const [tree] = useState<TreeNode>({
-		name: "root",
+		name: projectName,
 		path: "",
 		type: "directory",
 		children: {
@@ -100,6 +124,12 @@ export function FileExplorer({
 				path: "src",
 				type: "directory",
 				children: {
+					components: {
+						name: "components",
+						path: "src/components",
+						type: "directory",
+						children: {},
+					},
 					"App.tsx": {
 						name: "App.tsx",
 						path: "src/App.tsx",
@@ -114,6 +144,18 @@ export function FileExplorer({
 					},
 				},
 			},
+			"package.json": {
+				name: "package.json",
+				path: "package.json",
+				type: "file",
+				children: {},
+			},
+			"vite.config.ts": {
+				name: "vite.config.ts",
+				path: "vite.config.ts",
+				type: "file",
+				children: {},
+			},
 		},
 	});
 
@@ -122,8 +164,8 @@ export function FileExplorer({
 			<div className="p-2">
 				<TreeNode
 					node={tree}
-					onSelectFile={onSelectFile}
 					selectedFile={selectedFile}
+					projectName={projectName}
 				/>
 			</div>
 		</ScrollArea>

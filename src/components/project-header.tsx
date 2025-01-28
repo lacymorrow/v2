@@ -15,11 +15,12 @@ import {
 import { Download, GitForkIcon, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 interface ProjectHeaderProps {
-	onGenerate: () => Promise<void>;
+	onGenerate: (prompt: string) => Promise<void>;
 	isGenerating: boolean;
-	projectName?: string;
+	projectName?: string | null;
 }
 
 export function ProjectHeader({
@@ -29,8 +30,9 @@ export function ProjectHeader({
 }: ProjectHeaderProps) {
 	const [isInstalling, setIsInstalling] = useState(false);
 	const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+	const [prompt, setPrompt] = useState("Basic React app");
 
-	const installCommand = "npx shadcn@latest add \"https://cli.bones.sh\"";
+	const installCommand = 'npx shadcn@latest add "https://cli.bones.sh"';
 
 	async function handleInstall() {
 		setIsInstalling(true);
@@ -76,8 +78,19 @@ export function ProjectHeader({
 	}
 
 	return (
-		<div className="flex items-center justify-between border-b px-4 py-3">
-			<h1 className="text-lg font-semibold">React App Generator</h1>
+		<div className="flex items-center justify-between gap-4 border-b px-4 py-3">
+			<div className="flex flex-1 items-center gap-4">
+				<h1 className="text-lg font-semibold">React App Generator</h1>
+				<div className="flex-1">
+					<Input
+						placeholder="Describe your app..."
+						value={prompt}
+						onChange={(e) => setPrompt(e.target.value)}
+						disabled={isGenerating}
+						className="max-w-xl"
+					/>
+				</div>
+			</div>
 			<div className="flex gap-2">
 				<TooltipProvider>
 					<Tooltip>
@@ -94,11 +107,7 @@ export function ProjectHeader({
 						<TooltipTrigger asChild>
 							<Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
 								<PopoverTrigger asChild>
-									<Button
-										size="sm"
-										variant="outline"
-										disabled={isInstalling}
-									>
+									<Button size="sm" variant="outline" disabled={isInstalling}>
 										{isInstalling ? (
 											<>
 												<Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -142,7 +151,11 @@ export function ProjectHeader({
 
 					<Tooltip>
 						<TooltipTrigger asChild>
-							<Button onClick={onGenerate} disabled={isGenerating} size="sm">
+							<Button
+								onClick={() => onGenerate(prompt)}
+								disabled={isGenerating || !prompt.trim()}
+								size="sm"
+							>
 								{isGenerating ? (
 									<>
 										<Loader2 className="mr-2 h-4 w-4 animate-spin" />

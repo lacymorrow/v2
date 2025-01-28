@@ -3,13 +3,14 @@
 import { CopyButton } from "@/components/ui/copy-button";
 import { cn } from "@/lib/utils";
 import { type VariantProps, cva } from "class-variance-authority";
-import { ExpandIcon, MinimizeIcon } from "lucide-react";
+import { ExpandIcon, MinimizeIcon, Copy } from "lucide-react";
 import { useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import {
 	oneDark,
 	oneLight,
 } from "react-syntax-highlighter/dist/cjs/styles/prism";
+import { Button } from "./button";
 
 const codeWindowVariants = cva(
 	"overflow-hidden rounded-lg border transition-all duration-200",
@@ -63,7 +64,8 @@ const codeContentVariants = cva("overflow-auto", {
 			default: "p-4",
 			minimal: "p-4 bg-transparent",
 			ghost: "px-0",
-			single: "flex items-center justify-between border-none bg-muted/30 rounded-md hover:bg-muted/50 py-1 px-2",
+			single:
+				"flex items-center justify-between border-none bg-muted/30 rounded-md hover:bg-muted/50 py-1 px-2",
 		},
 	},
 	defaultVariants: {
@@ -86,7 +88,7 @@ interface CodeWindowProps extends VariantProps<typeof codeWindowVariants> {
 	size?: "default" | "sm" | "lg" | "inline";
 }
 
-export const CodeWindow = ({
+export function CodeWindow({
 	title = "",
 	code,
 	language = "typescript",
@@ -99,7 +101,7 @@ export const CodeWindow = ({
 	variant = "default",
 	size = "default",
 	className,
-}: CodeWindowProps) => {
+}: CodeWindowProps) {
 	const [isExpanded, setIsExpanded] = useState(false);
 
 	const toggleExpand = () => {
@@ -108,94 +110,92 @@ export const CodeWindow = ({
 
 	const isSingle = variant === "single";
 
+	async function copyToClipboard() {
+		try {
+			await navigator.clipboard.writeText(code);
+		} catch (error) {
+			console.error("Failed to copy code:", error);
+		}
+	}
+
 	return (
 		<div
 			className={cn(
-				codeWindowVariants({ variant, size }),
-				isExpanded && !isSingle && "fixed inset-0 z-40 bg-background",
+				"flex h-full flex-col overflow-hidden",
+				variant === "default" && "border bg-card",
 				className,
 			)}
 		>
-			{/* Title Bar */}
-			<div className={cn(titleBarVariants({ variant }))}>
-				<div className="flex items-center gap-2">
-					{variant === "default" && (
-						<div className="flex gap-2">
-							<div className="size-3 rounded-full bg-red-500" />
-							<div className="size-3 rounded-full bg-yellow-500" />
-							<div className="size-3 rounded-full bg-green-500" />
-						</div>
-					)}
-					{title && (
-						<span
-							className={cn(
-								"ml-2 text-sm",
-								variant === "default"
-									? "text-neutral-400"
-									: "text-muted-foreground",
-							)}
-						>
-							{title}
-						</span>
-					)}
+			{(title || showCopy) && (
+				<div className="flex items-center justify-between border-b bg-muted px-4 py-2">
+					<div className="flex items-center gap-2">
+						{variant === "default" && (
+							<div className="flex gap-2">
+								<div className="size-3 rounded-full bg-red-500" />
+								<div className="size-3 rounded-full bg-yellow-500" />
+								<div className="size-3 rounded-full bg-green-500" />
+							</div>
+						)}
+						{title && (
+							<span
+								className={cn(
+									"ml-2 text-sm",
+									variant === "default"
+										? "text-neutral-400"
+										: "text-muted-foreground",
+								)}
+							>
+								{title}
+							</span>
+						)}
+					</div>
+					<div className="flex items-center gap-2">
+						{showCopy && !isSingle && (
+							<Button
+								variant="ghost"
+								size="icon"
+								onClick={copyToClipboard}
+								className="h-8 w-8"
+							>
+								<Copy className="h-4 w-4" />
+							</Button>
+						)}
+						{!isSingle && (
+							<button
+								type="button"
+								onClick={toggleExpand}
+								className={cn(
+									"flex items-center gap-1 rounded px-2 py-1 text-xs",
+									variant === "default"
+										? "text-neutral-400 hover:bg-neutral-700"
+										: "text-muted-foreground hover:bg-muted",
+								)}
+							>
+								{isExpanded ? (
+									<MinimizeIcon className="size-3" />
+								) : (
+									<ExpandIcon className="size-3" />
+								)}
+							</button>
+						)}
+					</div>
 				</div>
-				<div className="flex items-center gap-2">
-					{showCopy && !isSingle && <CopyButton value={code} />}
-					{!isSingle && (
-						<button
-							type="button"
-							onClick={toggleExpand}
-							className={cn(
-								"flex items-center gap-1 rounded px-2 py-1 text-xs",
-								variant === "default"
-									? "text-neutral-400 hover:bg-neutral-700"
-									: "text-muted-foreground hover:bg-muted",
-							)}
-						>
-							{isExpanded ? (
-								<MinimizeIcon className="size-3" />
-							) : (
-								<ExpandIcon className="size-3" />
-							)}
-						</button>
-					)}
-				</div>
-			</div>
-
-			{/* Code Content */}
-			<div
-				className={cn(
-					codeContentVariants({ variant }),
-					!isExpanded && !isSingle && `max-h-[${maxHeight}]`,
-					"group relative",
-				)}
-			>
+			)}
+			<div className="flex-1 overflow-auto">
 				<SyntaxHighlighter
 					language={language}
-					style={theme === "dark" ? oneDark : oneLight}
-					showLineNumbers={showLineNumbers && !isSingle}
-					wrapLines={true}
-					wrapLongLines={wrapLongLines}
-					lineProps={(lineNumber) => ({
-						style: {
-							backgroundColor: highlightLines.includes(lineNumber)
-								? "rgba(255,255,255,0.1)"
-								: undefined,
-							display: "block",
-							width: "100%",
-						},
-					})}
+					style={oneDark}
+					showLineNumbers={showLineNumbers}
 					customStyle={{
 						margin: 0,
-						padding: 0,
 						background: "transparent",
-						fontSize: isSingle ? "0.875rem" : undefined,
+						fontSize: "14px",
+						height: "100%",
 					}}
 				>
 					{code}
 				</SyntaxHighlighter>
-				{isSingle && showCopy && <CopyButton value={code} className="ml-1" />}
 			</div>
 		</div>
 	);
-};
+}

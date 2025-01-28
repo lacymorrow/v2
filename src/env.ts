@@ -37,7 +37,7 @@ export const env = createEnv({
 		GOOGLE_PRIVATE_KEY: z.string().optional(),
 
 		// OpenAI
-		OPENAI_API_KEY: z.string().optional(),
+		OPENAI_API_KEY: z.string().min(1),
 
 		// Anthropic
 		ANTHROPIC_API_KEY: z.string().optional(),
@@ -64,6 +64,9 @@ export const env = createEnv({
 		VERCEL_ACCESS_TOKEN: z.string().optional(),
 		VERCEL_CLIENT_ID: z.string().optional(),
 		VERCEL_CLIENT_SECRET: z.string().optional(),
+
+		// DeepSeek
+		DEEPSEEK_API_KEY: z.string().optional()
 	},
 
 	/**
@@ -110,6 +113,7 @@ export const env = createEnv({
 		VERCEL_ACCESS_TOKEN: process.env.VERCEL_ACCESS_TOKEN,
 		VERCEL_CLIENT_ID: process.env.VERCEL_CLIENT_ID,
 		VERCEL_CLIENT_SECRET: process.env.VERCEL_CLIENT_SECRET,
+		DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
 	},
 	/**
 	 * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially

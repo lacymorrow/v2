@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
 	Tooltip,
 	TooltipContent,
@@ -12,12 +11,12 @@ import { ExternalLink, Loader2, RefreshCcw } from "lucide-react";
 import { useState } from "react";
 
 interface PreviewProps {
-	url: string | null;
+	url?: string | null;
 }
 
 export function Preview({ url }: PreviewProps) {
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [key, setKey] = useState(0); // For forcing iframe refresh
+	const [key, setKey] = useState(0);
 
 	if (!url) {
 		return (
@@ -30,7 +29,6 @@ export function Preview({ url }: PreviewProps) {
 	async function handleRefresh() {
 		setIsRefreshing(true);
 		setKey((prev) => prev + 1);
-		// Simulate loading time
 		await new Promise((resolve) => setTimeout(resolve, 500));
 		setIsRefreshing(false);
 	}
@@ -70,15 +68,14 @@ export function Preview({ url }: PreviewProps) {
 				</TooltipProvider>
 			</div>
 
-			<Card className="h-full overflow-hidden">
+			<div className="h-full overflow-hidden border-l">
 				<iframe
 					key={key}
 					src={url}
-					className="h-full w-full"
-					title="Project Preview"
-					sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+					className="h-full w-full border-none"
+					sandbox="allow-scripts allow-same-origin"
 				/>
-			</Card>
+			</div>
 		</div>
 	);
 }

@@ -1,4 +1,4 @@
-import react from '@vitejs/plugin-react-swc'
+import react from '@vitejs/plugin-react'
 import path from "path"
 import { defineConfig } from "vite"
 
@@ -9,7 +9,9 @@ export default defineConfig({
 	build: {
 		outDir: 'dist',
 		emptyOutDir: true,
-		sourcemap: true,
+		sourcemap: false, // Disable sourcemaps for faster builds
+		minify: 'esbuild', // Faster than terser
+		target: 'esnext', // Modern browsers only
 		rollupOptions: {
 			output: {
 				manualChunks: {
@@ -30,6 +32,12 @@ export default defineConfig({
 		},
 	},
 	optimizeDeps: {
-		include: ['@radix-ui/react-icons', 'lucide-react'],
+		disabled: !!process.env.VITE_FAST_BUILD, // Skip dep optimization in fast mode
+		include: ['react', 'react-dom'],
+	},
+	esbuild: {
+		target: 'esnext',
+		legalComments: 'none',
+		treeShaking: true,
 	},
 })
