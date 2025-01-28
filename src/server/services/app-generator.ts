@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
 import { promisify } from 'util';
+import { applyAIChanges, generateWithAI } from './ai-generator';
 
 const execAsync = promisify(exec);
 
@@ -77,6 +78,17 @@ export async function generateApp({ prompt, name, template = 'react' }: Generate
 			buildPath,
 			{ recursive: true }
 		);
+
+		// Generate AI changes
+		console.log('🤖 Generating AI changes...');
+		const aiChanges = await generateWithAI({
+			prompt,
+			appPath,
+			currentFile: 'src/App.tsx' // Start with main app file
+		});
+
+		// Apply the changes
+		await applyAIChanges(appPath, aiChanges);
 
 		// Cleanup source files (optional)
 		console.log('🧹 Cleaning up source files...');
