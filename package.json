@@ -35,7 +35,8 @@
 		"test:node": "vitest --config=vitest.config.node.ts",
 		"typecheck": "tsc --noEmit",
 		"build:registry": "tsx src/registry/generate-registry.ts",
-		"build:blocks": "tsx scripts/generate-registry.ts -i src/registry/blocks -o public/registry -t"
+		"build:blocks": "tsx scripts/generate-registry.ts -i src/registry/blocks -o public/registry -t",
+		"sync-upstream": "tsx scripts/sync-upstream.ts"
 	},
 	"dependencies": {
 		"@auth/drizzle-adapter": "1.7.4",
@@ -306,6 +307,7 @@
 		"buffer": "6.0.3",
 		"chromedriver": "131.0.4",
 		"color": "^4.2.3",
+		"commander": "^11.1.0",
 		"concurrently": "^9.1.0",
 		"copyfiles": "2.4.1",
 		"crypto-browserify": "3.12.1",

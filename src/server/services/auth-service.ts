@@ -5,8 +5,10 @@ import { signInSchema } from "@/lib/schemas/auth";
 import { signIn, signOut } from "@/server/auth";
 import { db } from "@/server/db";
 import { users } from "@/server/db/schema";
-import { compare, hash } from "bcrypt";
-import { nanoid } from "nanoid";
+import "server-only";
+
+// Use dynamic import for bcrypt
+const bcryptPromise = import('bcrypt');
 
 /**
  * Authentication service for handling user authentication and authorization
@@ -64,6 +66,7 @@ export const AuthService = {
 		redirectTo?: string;
 	}) {
 		try {
+			const bcrypt = await bcryptPromise;
 			// Check if user already exists
 			const existingUser = await db?.query.users.findFirst({
 				where: (users, { eq }) => eq(users.email, email),
@@ -74,7 +77,7 @@ export const AuthService = {
 			}
 
 			// Hash password
-			const hashedPassword = await hash(password, 10);
+			const hashedPassword = await bcrypt.hash(password, 10);
 
 			// Create new user
 			const result = await db
@@ -126,6 +129,7 @@ export const AuthService = {
 	 */
 	async validateCredentials(credentials: unknown) {
 		try {
+			const bcrypt = await bcryptPromise;
 			const parsedCredentials = signInSchema.safeParse(credentials);
 
 			if (!parsedCredentials.success) {
@@ -142,7 +146,7 @@ export const AuthService = {
 				throw new Error("Invalid credentials");
 			}
 
-			const isValidPassword = await compare(password, user.password);
+			const isValidPassword = await bcrypt.compare(password, user.password);
 
 			if (!isValidPassword) {
 				throw new Error("Invalid credentials");
