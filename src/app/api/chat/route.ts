@@ -44,15 +44,17 @@ export async function POST(req: Request) {
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream({
 		async start(controller) {
+			function sendEvent(data: string) {
+				controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+			}
+
 			try {
 				for await (const chunk of streamChat(messages, { model })) {
-					controller.enqueue(encoder.encode(chunk));
+					sendEvent(chunk);
 				}
 			} catch (error) {
 				console.error("Stream error:", error);
-				controller.enqueue(
-					encoder.encode("\nError: Failed to generate response.")
-				);
+				sendEvent("Error: Failed to generate response.");
 			} finally {
 				controller.close();
 			}
@@ -63,7 +65,7 @@ export async function POST(req: Request) {
 		headers: {
 			"Content-Type": "text/event-stream",
 			"Cache-Control": "no-cache",
-			Connection: "keep-alive",
+			"Connection": "keep-alive",
 		},
 	});
 }

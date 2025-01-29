@@ -15,7 +15,7 @@ const deepseek = new OpenAI({
 });
 
 export type Provider = "openai" | "deepseek";
-export type Model = "gpt-4" | "gpt-3.5-turbo";
+export type Model = "gpt-4" | "gpt-3.5-turbo" | "deepseek-chat";
 
 interface ChatOptions {
 	provider?: Provider;
@@ -95,8 +95,8 @@ function extractCodeBlocks(content: string): Array<{
 	file: string;
 	code: string;
 }> {
-	// Updated regex to be more lenient with whitespace and quotes
-	const codeBlockRegex = /```([\w]+)\s+project=["']([^"']+)["']\s+file=["']([^"']+)["'].*?\n([\s\S]*?)```/g;
+	// Updated regex to better handle code blocks with metadata
+	const codeBlockRegex = /```([\w]+)\s+project=["']([^"']+)["']\s+file=["']([^"']+)["'](?:\s+type=["'][^"']+["'])?\s*\n([\s\S]*?)```/g;
 	const blocks: Array<{
 		type: string;
 		project: string;
@@ -104,27 +104,36 @@ function extractCodeBlocks(content: string): Array<{
 		code: string;
 	}> = [];
 
-	console.log("Attempting to extract code blocks from:", content);
+	console.log("Attempting to extract code blocks from content:", `${content.substring(0, 200)}...`);
 
-	for (; ;) {
-		const match = codeBlockRegex.exec(content);
-		if (match === null) break;
+	let match: RegExpExecArray | null = codeBlockRegex.exec(content);
+	while (match !== null) {
+		console.log("Found code block match:", {
+			type: match[1],
+			project: match[2],
+			file: match[3],
+			codePreview: `${match[4]?.substring(0, 50)}...`
+		});
 
-		console.log("Found match:", match);
-		const [fullMatch, type, project, file, code] = match;
-		console.log("Extracted components:", { type, project, file, codeLength: code?.length });
-
-		if (type && project && file && code) {
-			blocks.push({
-				type,
-				project,
-				file,
-				code: code.trim(),
+		if (match[1] && match[2] && match[3] && match[4]) {
+			const block = {
+				type: match[1],
+				project: match[2],
+				file: match[3],
+				code: match[4].trim()
+			};
+			blocks.push(block);
+			console.log("Added code block:", {
+				type: block.type,
+				project: block.project,
+				file: block.file,
+				codeLength: block.code.length
 			});
 		}
+		match = codeBlockRegex.exec(content);
 	}
 
-	console.log("Extracted blocks:", blocks);
+	console.log(`Extracted ${blocks.length} code blocks`);
 	return blocks;
 }
 
@@ -145,22 +154,25 @@ async function handleCodeBlocks(blocks: Array<{
 			codeLength: block.code.length
 		});
 
-		if (block.type === "tsx" || block.type === "ts" || block.type === "jsx" || block.type === "js") {
-			try {
-				// Add "use client" directive for React components
-				const codeWithDirective = block.type.includes("x")
-					? `"use client";\n\n${block.code}`
-					: block.code;
+		try {
+			// Add "use client" directive for React components if needed
+			const needsClientDirective = block.type.includes("x") && !block.code.includes('"use client"');
+			const codeWithDirective = needsClientDirective
+				? `"use client";\n\n${block.code}`
+				: block.code;
 
-				const filePath = `src/components/${block.file}`;
-				console.log("Creating/updating file:", filePath);
-				console.log("Code content:", codeWithDirective);
-				await editFile(filePath, codeWithDirective);
-				result += `Created/Updated file: ${filePath}\n`;
-			} catch (error) {
-				console.error("Error handling code block:", error);
-				result += `Error creating/updating file: ${error instanceof Error ? error.message : "Unknown error"}\n`;
+			// Determine the correct file path based on the file type
+			let filePath = block.file;
+			if (!filePath.startsWith("src/")) {
+				filePath = `src/components/${block.file}`;
 			}
+
+			console.log("Creating/updating file:", filePath);
+			await editFile(filePath, codeWithDirective);
+			result += `✅ Created/updated file: ${filePath}\n`;
+		} catch (error) {
+			console.error("Error handling code block:", error);
+			result += `❌ Error creating/updating file: ${error instanceof Error ? error.message : "Unknown error"}\n`;
 		}
 	}
 
@@ -173,7 +185,7 @@ export async function* streamChat(
 	messages: { role: "user" | "assistant" | "system"; content: string }[],
 	options: ChatOptions = {}
 ) {
-	const { provider, model, temperature } = { ...defaultOptions, ...options };
+	const { provider = defaultOptions.provider, model = defaultOptions.model, temperature = defaultOptions.temperature } = options;
 	const client = provider === "deepseek" ? deepseek : openai;
 
 	// Add system prompt if not present
@@ -184,7 +196,7 @@ export async function* streamChat(
 
 	try {
 		const stream = await client.chat.completions.create({
-			model: model as "gpt-4" | "gpt-3.5-turbo",
+			model: model as string,
 			messages,
 			temperature,
 			stream: true,
