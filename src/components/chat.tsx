@@ -5,8 +5,8 @@ import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, SendHorizontal } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { type Model, type Provider } from "@/server/services/chat-service";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import type { Model } from "@/server/services/chat-service";
 import {
 	Select,
 	SelectContent,
@@ -19,6 +19,7 @@ import { env } from "@/env";
 interface Message {
 	role: "user" | "assistant";
 	content: string;
+	id: string;
 }
 
 interface ChatProps {
@@ -38,18 +39,72 @@ export function Chat({
 	const scrollRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
-		if (scrollRef.current) {
-			scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+		const scrollElement = scrollRef.current;
+		if (scrollElement) {
+			scrollElement.scrollTop = scrollElement.scrollHeight;
 		}
-	}, [messages, generationStatus]);
+	}, [messages.length, generationStatus]);
 
-	async function handleSubmit(e: React.FormEvent) {
-		e.preventDefault();
+	async function handleFileOperation(content: string) {
+		if (content.startsWith("!read ")) {
+			const path = content.slice(6).trim();
+			try {
+				const response = await fetch("/api/chat", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						fileOperation: {
+							type: "read",
+							path,
+						},
+					}),
+				});
+
+				if (!response.ok) throw new Error("Failed to read file");
+				const { content: fileContent } = await response.json();
+				return `Content of ${path}:\n\`\`\`\n${fileContent}\n\`\`\``;
+			} catch (error) {
+				return `Error reading file: ${error instanceof Error ? error.message : "Unknown error"}`;
+			}
+		}
+
+		if (content.startsWith("!edit ")) {
+			const [, path, ...contentParts] = content.slice(6).split(" ");
+			const fileContent = contentParts.join(" ");
+			try {
+				const response = await fetch("/api/chat", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						fileOperation: {
+							type: "edit",
+							path,
+							content: fileContent,
+						},
+					}),
+				});
+
+				if (!response.ok) throw new Error("Failed to edit file");
+				return `Successfully edited ${path}`;
+			} catch (error) {
+				return `Error editing file: ${error instanceof Error ? error.message : "Unknown error"}`;
+			}
+		}
+
+		return content;
+	}
+
+	async function handleSubmit(event: FormEvent) {
+		event.preventDefault();
 		if (!input.trim() || isGenerating) return;
 
 		const userMessage = input.trim();
+		const messageId = crypto.randomUUID();
 		setInput("");
-		setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
+		setMessages((prev) => [
+			...prev,
+			{ role: "user", content: userMessage, id: messageId },
+		]);
 
 		try {
 			const response = await fetch("/api/chat", {
@@ -67,25 +122,38 @@ export function Chat({
 			if (!reader) throw new Error("No response stream");
 
 			let assistantMessage = "";
-			setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+			const assistantMessageId = crypto.randomUUID();
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: "", id: assistantMessageId },
+			]);
 
 			while (true) {
 				const { done, value } = await reader.read();
 				if (done) break;
 
 				const text = new TextDecoder().decode(value);
-				assistantMessage += text;
+				const processedText = await handleFileOperation(text);
+				assistantMessage += processedText;
 
 				setMessages((prev) => [
 					...prev.slice(0, -1),
-					{ role: "assistant", content: assistantMessage },
+					{
+						role: "assistant",
+						content: assistantMessage,
+						id: assistantMessageId,
+					},
 				]);
 			}
 		} catch (error) {
 			console.error("Chat error:", error);
 			setMessages((prev) => [
 				...prev,
-				{ role: "assistant", content: "Error: Failed to generate response." },
+				{
+					role: "assistant",
+					content: "Error: Failed to generate response.",
+					id: crypto.randomUUID(),
+				},
 			]);
 		}
 	}
@@ -107,11 +175,11 @@ export function Chat({
 				</Select>
 			</div>
 			<div className="flex-1 overflow-hidden">
-				<ScrollArea className="h-full">
+				<ScrollArea className="h-full" ref={scrollRef}>
 					<div className="flex flex-col gap-4 p-4">
-						{messages.map((message, i) => (
+						{messages.map((message) => (
 							<div
-								key={i}
+								key={message.id}
 								className={`flex ${
 									message.role === "user" ? "justify-end" : "justify-start"
 								}`}

@@ -2,61 +2,68 @@ import { generateRandomName } from "@/lib/utils";
 import { generateApp } from "./app-generator";
 
 interface QueuedProject {
-    name: string;
-    publicUrl: string;
+	name: string;
+	publicUrl: string;
 }
 
 class ProjectQueue {
-    private queue: QueuedProject[] = [];
-    private isGenerating = false;
-    private maxQueueSize = 2;
+	private queue: QueuedProject[] = [];
+	private isGenerating = false;
+	private maxQueueSize = 2;
+	private isInitialized = false;
 
-    async initialize() {
-        // Generate initial projects
-        await this.ensureQueueFilled();
-    }
+	async initialize() {
+		if (this.isInitialized) return;
+		this.isInitialized = true;
+	}
 
-    private async generateProject(): Promise<QueuedProject> {
-        this.isGenerating = true;
-        try {
-            const name = generateRandomName();
-            const app = await generateApp({
-                prompt: "Basic React app",
-                name,
-                template: "react",
-            });
-            return {
-                name,
-                publicUrl: app.publicUrl,
-            };
-        } finally {
-            this.isGenerating = false;
-        }
-    }
+	private async generateProject(): Promise<QueuedProject> {
+		if (this.isGenerating) {
+			throw new Error("Already generating a project");
+		}
 
-    private async ensureQueueFilled() {
-        if (this.isGenerating) return;
+		this.isGenerating = true;
+		try {
+			const name = generateRandomName();
+			const app = await generateApp({
+				prompt: "Basic React app",
+				name,
+				template: "react",
+			});
+			return {
+				name,
+				publicUrl: app.publicUrl,
+			};
+		} finally {
+			this.isGenerating = false;
+		}
+	}
 
-        while (this.queue.length < this.maxQueueSize) {
-            const project = await this.generateProject();
-            this.queue.push(project);
-        }
-    }
+	private async ensureQueueFilled() {
+		if (this.isGenerating) return;
 
-    async getNextProject(): Promise<QueuedProject> {
-        if (this.queue.length === 0) {
-            // Generate one immediately if queue is empty
-            return await this.generateProject();
-        }
+		while (this.queue.length < this.maxQueueSize) {
+			const project = await this.generateProject();
+			this.queue.push(project);
+		}
+	}
 
-        // Get next project from queue
-        const project = this.queue.shift()!;
+	async getNextProject(): Promise<QueuedProject> {
+		await this.initialize();
 
-        // Start generating next project in background
-        this.ensureQueueFilled().catch(console.error);
+		if (this.queue.length === 0) {
+			// Generate one immediately if queue is empty
+			return await this.generateProject();
+		}
 
-        return project;
-    }
+		// Get next project from queue
+		const project = this.queue.shift()!;
+
+		// Start generating next project in background
+		this.ensureQueueFilled().catch(console.error);
+
+		return project;
+	}
 }
 
 // Singleton instance

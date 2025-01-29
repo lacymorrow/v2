@@ -11,7 +11,10 @@ import { Toaster } from "sonner";
 // Initialize server-side services
 initializeServer().catch(console.error);
 
-export const metadata: Metadata = defaultMetadata;
+export const metadata: Metadata = {
+	title: "🚀 ShipKit - Your AI-Powered Dev Companion",
+	description: "Build amazing web apps with the help of AI",
+};
 
 export default function Layout({ children }: { children: React.ReactNode }) {
 	return (

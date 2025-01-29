@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Chat } from "@/components/chat";
 import { cn } from "@/lib/utils";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	ResizablePanelGroup,
 	ResizablePanel,
@@ -32,6 +32,7 @@ export default function HomePage() {
 		setProject,
 		setLoading,
 		setGenerationStatus,
+		reset,
 	} = useProjectStore();
 	const [isChatCollapsed, setIsChatCollapsed] = useState(false);
 	const [activeTab, setActiveTab] = useState<"code" | "preview">("code");
@@ -39,6 +40,11 @@ export default function HomePage() {
 	const [showChat, setShowChat] = useState(true);
 	const [showPreview, setShowPreview] = useState(false);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
+
+	// Reset loading state on mount
+	useEffect(() => {
+		setLoading(false);
+	}, [setLoading]);
 
 	async function handleGenerate(prompt: string) {
 		if (!prompt || isLoading) return;
