@@ -80,7 +80,12 @@ export function ProjectHeader({
 	return (
 		<div className="flex items-center justify-between gap-4 border-b px-4 py-3">
 			<div className="flex flex-1 items-center gap-4">
-				<h1 className="text-lg font-semibold">React App Generator</h1>
+				<div className="flex items-center gap-2">
+					<h1 className="text-lg font-semibold">React App Generator</h1>
+					{projectName && (
+						<span className="text-sm text-muted-foreground">{projectName}</span>
+					)}
+				</div>
 				<div className="flex-1">
 					<Input
 						placeholder="Describe your app..."

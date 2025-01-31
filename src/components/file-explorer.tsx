@@ -3,23 +3,18 @@
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronRight, File, Folder, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { useProjectStore } from "@/hooks/use-project-store";
+import type { TreeNode } from "@/server/services/file-system";
 
 interface FileExplorerProps {
 	selectedFile?: string | null;
 	projectName?: string | null;
+	initialTree?: TreeNode | null;
 }
 
-interface TreeNode {
-	name: string;
-	path: string;
-	type: "file" | "directory";
-	children: Record<string, TreeNode>;
-}
-
-function TreeNode({
+function TreeNodeComponent({
 	node,
 	selectedFile,
 	projectName,
@@ -88,7 +83,7 @@ function TreeNode({
 							return a.name.localeCompare(b.name);
 						})
 						.map((child) => (
-							<TreeNode
+							<TreeNodeComponent
 								key={child.path}
 								node={child}
 								selectedFile={selectedFile}
@@ -102,68 +97,96 @@ function TreeNode({
 	);
 }
 
-export function FileExplorer({ selectedFile, projectName }: FileExplorerProps) {
-	if (!projectName) {
+export function FileExplorer({
+	selectedFile,
+	projectName,
+	initialTree,
+}: FileExplorerProps) {
+	console.log("FileExplorer rendered with:", {
+		projectName,
+		selectedFile,
+		hasInitialTree: !!initialTree,
+		initialTreeStructure: initialTree
+			? {
+					name: initialTree.name,
+					childCount: Object.keys(initialTree.children).length,
+					children: Object.keys(initialTree.children),
+				}
+			: null,
+	});
+
+	const [fileTree, setFileTree] = useState<TreeNode | null>(
+		initialTree ?? null,
+	);
+	const [isLoading, setIsLoading] = useState(!initialTree);
+
+	useEffect(() => {
+		async function loadFileTree() {
+			if (!projectName) {
+				console.log("No project name provided, clearing file tree");
+				setFileTree(null);
+				return;
+			}
+
+			console.log(`Loading file tree for project: ${projectName}`);
+			setIsLoading(true);
+			try {
+				const response = await fetch(
+					`/api/files/tree?project=${encodeURIComponent(projectName)}`,
+					{
+						cache: "no-store",
+						headers: {
+							Accept: "application/json",
+						},
+					},
+				);
+				if (!response.ok) throw new Error("Failed to load file tree");
+				const data = await response.json();
+				console.log("Received file tree data:", {
+					projectName,
+					treeName: data.tree.name,
+					childCount: Object.keys(data.tree.children).length,
+					children: Object.keys(data.tree.children),
+				});
+				setFileTree(data.tree);
+			} catch (error) {
+				console.error("Failed to load file tree:", error);
+			} finally {
+				setIsLoading(false);
+			}
+		}
+
+		loadFileTree();
+	}, [projectName]);
+
+	if (!projectName || isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center text-muted-foreground">
 				<div className="flex flex-col items-center gap-2">
 					<Loader2 className="h-8 w-8 animate-spin" />
-					<span>Generate a project to view files</span>
+					<span>
+						{isLoading
+							? "Loading files..."
+							: "Generate a project to view files"}
+					</span>
 				</div>
 			</div>
 		);
 	}
 
-	const [tree] = useState<TreeNode>({
-		name: projectName,
-		path: "",
-		type: "directory",
-		children: {
-			src: {
-				name: "src",
-				path: "src",
-				type: "directory",
-				children: {
-					components: {
-						name: "components",
-						path: "src/components",
-						type: "directory",
-						children: {},
-					},
-					"App.tsx": {
-						name: "App.tsx",
-						path: "src/App.tsx",
-						type: "file",
-						children: {},
-					},
-					"main.tsx": {
-						name: "main.tsx",
-						path: "src/main.tsx",
-						type: "file",
-						children: {},
-					},
-				},
-			},
-			"package.json": {
-				name: "package.json",
-				path: "package.json",
-				type: "file",
-				children: {},
-			},
-			"vite.config.ts": {
-				name: "vite.config.ts",
-				path: "vite.config.ts",
-				type: "file",
-				children: {},
-			},
-		},
-	});
+	if (!fileTree) {
+		return (
+			<div className="flex h-full items-center justify-center text-muted-foreground">
+				<span>No files found</span>
+			</div>
+		);
+	}
 
 	return (
 		<ScrollArea className="h-full">
 			<div className="p-2">
-				<TreeNode
-					node={tree}
+				<TreeNodeComponent
+					node={fileTree}
 					selectedFile={selectedFile}
 					projectName={projectName}
 				/>

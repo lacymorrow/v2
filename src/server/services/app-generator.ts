@@ -1,9 +1,9 @@
 import type { GeneratedApp } from '@/types/app';
-import { exec } from 'child_process';
-import crypto from 'crypto';
-import fs from 'fs/promises';
-import path from 'path';
-import { promisify } from 'util';
+import { exec } from 'node:child_process';
+import crypto from 'node:crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
 
@@ -104,11 +104,10 @@ export async function generateApp({
 			throw new Error('Build failed: dist directory not created');
 		}
 
-		// Copy build files and cleanup
+		// Copy build files but keep source
 		notify("Finalizing", 90);
 		await fs.mkdir(buildPath, { recursive: true });
 		await fs.cp(distPath, buildPath, { recursive: true });
-		await fs.rm(appPath, { recursive: true, force: true });
 
 		app.status = 'ready';
 		notify("Complete", 100);

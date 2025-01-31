@@ -2,7 +2,9 @@ import OpenAI from "openai";
 import { env } from "@/env";
 import fs from "fs/promises";
 import path from "path";
-import { editFile } from "./file-service";
+import { writeProjectFile } from "./file-system";
+import { refreshFileTree } from "@/server/actions/file-actions";
+import type { ChatCompletionChunk } from "openai/resources/chat/completions";
 
 // Initialize clients
 const openai = new OpenAI({
@@ -23,6 +25,15 @@ interface ChatOptions {
 	temperature?: number;
 	systemPrompt?: string;
 }
+
+interface CodeBlock {
+	type: string;
+	project: string;
+	file: string;
+	code: string;
+}
+
+const APP_STORAGE_PATH = path.join(process.cwd(), 'generated-apps');
 
 // Read the v2 prompt from the file system
 async function getV2Prompt(): Promise<string> {
@@ -89,38 +100,22 @@ const defaultOptions: ChatOptions = {
 };
 
 // Function to extract code blocks and their metadata from MDX content
-function extractCodeBlocks(content: string): Array<{
-	type: string;
-	project: string;
-	file: string;
-	code: string;
-}> {
-	// Updated regex to better handle code blocks with metadata
+function extractCodeBlocks(content: string): CodeBlock[] {
 	const codeBlockRegex = /```([\w]+)\s+project=["']([^"']+)["']\s+file=["']([^"']+)["'](?:\s+type=["'][^"']+["'])?\s*\n([\s\S]*?)```/g;
-	const blocks: Array<{
-		type: string;
-		project: string;
-		file: string;
-		code: string;
-	}> = [];
+	const blocks: CodeBlock[] = [];
 
 	console.log("Attempting to extract code blocks from content:", `${content.substring(0, 200)}...`);
 
 	let match: RegExpExecArray | null = codeBlockRegex.exec(content);
 	while (match !== null) {
-		console.log("Found code block match:", {
-			type: match[1],
-			project: match[2],
-			file: match[3],
-			codePreview: `${match[4]?.substring(0, 50)}...`
-		});
+		const [, type, project, file, code] = match;
 
-		if (match[1] && match[2] && match[3] && match[4]) {
-			const block = {
-				type: match[1],
-				project: match[2],
-				file: match[3],
-				code: match[4].trim()
+		if (type && project && file && code) {
+			const block: CodeBlock = {
+				type,
+				project,
+				file,
+				code: code.trim()
 			};
 			blocks.push(block);
 			console.log("Added code block:", {
@@ -138,12 +133,7 @@ function extractCodeBlocks(content: string): Array<{
 }
 
 // Function to handle code blocks
-async function handleCodeBlocks(blocks: Array<{
-	type: string;
-	project: string;
-	file: string;
-	code: string;
-}>): Promise<string> {
+async function handleCodeBlocks(blocks: CodeBlock[]): Promise<string> {
 	let result = "";
 
 	for (const block of blocks) {
@@ -162,17 +152,28 @@ async function handleCodeBlocks(blocks: Array<{
 				: block.code;
 
 			// Determine the correct file path based on the file type
-			let filePath = block.file;
-			if (!filePath.startsWith("src/")) {
-				filePath = `src/components/${block.file}`;
-			}
+			const filePath = block.file.startsWith("src/")
+				? block.file
+				: `src/components/${block.file}`;
 
-			console.log("Creating/updating file:", filePath);
-			await editFile(filePath, codeWithDirective);
-			result += `✅ Created/updated file: ${filePath}\n`;
+			// Write the file to the project - this will now validate the project exists
+			// and trigger a rebuild automatically
+			await writeProjectFile(block.project, filePath, codeWithDirective);
+			result += `✅ Created/updated file: ${filePath} in project ${block.project}\n`;
+
+			// Refresh the file tree using the server action
+			try {
+				await refreshFileTree(block.project);
+			} catch (error) {
+				console.error("Failed to refresh file tree:", error);
+			}
 		} catch (error) {
 			console.error("Error handling code block:", error);
-			result += `❌ Error creating/updating file: ${error instanceof Error ? error.message : "Unknown error"}\n`;
+			if (error instanceof Error && error.message.includes("does not exist")) {
+				result += `❌ Error: Project ${block.project} does not exist. Please generate the project first.\n`;
+			} else {
+				result += `❌ Error creating/updating file: ${error instanceof Error ? error.message : "Unknown error"}\n`;
+			}
 		}
 	}
 
@@ -180,6 +181,7 @@ async function handleCodeBlocks(blocks: Array<{
 }
 
 let accumulatedContent = "";
+let currentLine = "";
 
 export async function* streamChat(
 	messages: { role: "user" | "assistant" | "system"; content: string }[],
@@ -203,61 +205,69 @@ export async function* streamChat(
 		});
 
 		for await (const chunk of stream) {
-			const content = chunk.choices[0]?.delta?.content;
-			if (content) {
-				// Accumulate content to handle MDX blocks
-				accumulatedContent += content;
-				console.log("Accumulated content length:", accumulatedContent.length);
+			const content = (chunk as ChatCompletionChunk).choices[0]?.delta?.content;
+			if (typeof content !== 'string') continue;
 
-				// Check for complete code blocks
-				const blockCount = (accumulatedContent.match(/```/g) || []).length;
-				console.log("Block count:", blockCount);
+			// Accumulate content for the current line
+			currentLine += content;
 
-				if (blockCount > 0 && blockCount % 2 === 0) {
-					console.log("Found complete code block(s)");
-					console.log("Accumulated content:", accumulatedContent);
-
-					const blocks = extractCodeBlocks(accumulatedContent);
-					console.log("Extracted blocks:", blocks);
-
-					if (blocks.length > 0) {
-						const result = await handleCodeBlocks(blocks);
-						yield result;
-						// Clear the accumulated content after processing
-						accumulatedContent = "";
+			// If we have a newline, yield the current line and reset
+			if (content.includes('\n')) {
+				const lines = currentLine.split('\n');
+				// Handle all complete lines
+				for (let i = 0; i < lines.length - 1; i++) {
+					const line = lines[i]?.trim() ?? '';
+					if (line) {
+						yield `${line}\n`;
 					}
 				}
+				// Keep the last incomplete line
+				currentLine = lines[lines.length - 1] ?? '';
+			}
 
-				// Check for file operation commands
-				if (content.startsWith("!read ")) {
-					const path = content.slice(6).trim();
-					yield `Reading file ${path}...\n`;
-					continue;
-				}
-				if (content.startsWith("!edit ")) {
-					const [, path, ...contentParts] = content.slice(6).split(" ");
-					yield `Editing file ${path}...\n`;
-					continue;
-				}
+			// Accumulate content for code block detection
+			accumulatedContent += content;
 
-				// Yield the content
-				yield content;
+			// Check for complete code blocks
+			const blockCount = (accumulatedContent.match(/```/g) || []).length;
+
+			if (blockCount > 0 && blockCount % 2 === 0) {
+				const blocks = extractCodeBlocks(accumulatedContent);
+				if (blocks.length > 0) {
+					const result = await handleCodeBlocks(blocks);
+					yield result;
+					accumulatedContent = "";
+					currentLine = "";
+				}
+			}
+
+			// Check for file operation commands
+			if (content.startsWith("!read ")) {
+				const path = content.slice(6).trim();
+				yield `Reading file ${path}...\n`;
+			} else if (content.startsWith("!edit ")) {
+				const [, path, ...contentParts] = content.slice(6).split(" ");
+				yield `Editing file ${path}...\n`;
 			}
 		}
 
-		// Process any remaining content
+		// Handle any remaining content
+		if (currentLine.trim()) {
+			yield `${currentLine.trim()}\n`;
+		}
+
 		if (accumulatedContent) {
-			console.log("Processing remaining content:", accumulatedContent);
 			const blocks = extractCodeBlocks(accumulatedContent);
-			console.log("Remaining blocks:", blocks);
 			if (blocks.length > 0) {
 				const result = await handleCodeBlocks(blocks);
 				yield result;
 			}
 			accumulatedContent = "";
+			currentLine = "";
 		}
 	} catch (error) {
 		console.error("Chat error:", error);
 		yield "\nError: Failed to generate response. Please try again.";
 	}
 }
+

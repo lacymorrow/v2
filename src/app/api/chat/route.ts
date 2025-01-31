@@ -42,15 +42,48 @@ export async function POST(req: Request) {
 
 	// Handle chat messages
 	const encoder = new TextEncoder();
+	let buffer = "";
+
 	const stream = new ReadableStream({
 		async start(controller) {
 			function sendEvent(data: string) {
-				controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+				// Split into lines and send each non-empty line as a separate event
+				const lines = data.split('\n');
+				for (const line of lines) {
+					if (line.trim()) {
+						controller.enqueue(encoder.encode(`data: ${line}\n\n`));
+					}
+				}
 			}
 
 			try {
 				for await (const chunk of streamChat(messages, { model })) {
-					sendEvent(chunk);
+					if (!chunk) continue;
+
+					// If chunk contains a newline, process buffer
+					if (chunk.includes('\n')) {
+						const parts = (buffer + chunk).split('\n');
+						// Process all complete lines
+						for (let i = 0; i < parts.length - 1; i++) {
+							const line = parts[i];
+							if (line?.trim()) {
+								sendEvent(line);
+							}
+						}
+						// Keep the last part as the new buffer
+						buffer = parts[parts.length - 1] ?? '';
+					} else {
+						buffer += chunk;
+						// If buffer gets too large, send it
+						if (buffer.length > 100) {
+							sendEvent(buffer);
+							buffer = "";
+						}
+					}
+				}
+				// Send any remaining buffer
+				if (buffer.trim()) {
+					sendEvent(buffer);
 				}
 			} catch (error) {
 				console.error("Stream error:", error);

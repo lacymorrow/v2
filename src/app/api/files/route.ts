@@ -1,20 +1,20 @@
-import { readFileContent } from "@/server/services/file-service";
+import { readProjectFile } from "@/server/services/file-system";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
-    const path = searchParams.get("path");
     const project = searchParams.get("project");
+    const path = searchParams.get("path");
 
-    if (!path || !project) {
+    if (!project || !path) {
         return NextResponse.json(
-            { error: "Missing path or project parameter" },
+            { error: "Missing project or path parameter" },
             { status: 400 },
         );
     }
 
     try {
-        const content = await readFileContent(project, path);
+        const content = await readProjectFile(project, path);
         return NextResponse.json({ content });
     } catch (error) {
         console.error("Failed to read file:", error);
