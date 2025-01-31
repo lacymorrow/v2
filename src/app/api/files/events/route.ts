@@ -24,12 +24,21 @@ export async function GET(request: Request) {
                 controller.enqueue(encoder.encode(`data: ${data}\n\n`));
             }
 
+            // Send initial connection event
+            sendEvent(JSON.stringify({ type: 'connected', projectName: project }));
+
             // Store the event handler in global state
             (global as any).fileTreeEventHandlers = (global as any).fileTreeEventHandlers || {};
             (global as any).fileTreeEventHandlers[eventId] = sendEvent;
 
+            // Set up heartbeat to keep connection alive
+            const heartbeatInterval = setInterval(() => {
+                sendEvent(JSON.stringify({ type: 'heartbeat' }));
+            }, 30000); // Send heartbeat every 30 seconds
+
             // Clean up when the connection is closed
             request.signal.addEventListener("abort", () => {
+                clearInterval(heartbeatInterval);
                 delete (global as any).fileTreeEventHandlers[eventId];
             });
         }

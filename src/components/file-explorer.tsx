@@ -114,6 +114,7 @@ export function FileExplorer({
 	);
 	const [isLoading, setIsLoading] = useState(!initialTree);
 	const [isRefreshing, setIsRefreshing] = useState(false);
+	const [isConnected, setIsConnected] = useState(false);
 
 	useEffect(() => {
 		async function loadFileTree() {
@@ -150,19 +151,65 @@ export function FileExplorer({
 	useEffect(() => {
 		if (!projectName) return;
 
-		const eventSource = new EventSource(
-			`/api/files/events?project=${encodeURIComponent(projectName)}`,
-		);
+		let retryCount = 0;
+		const maxRetries = 3;
+		let eventSource: EventSource | null = null;
 
-		eventSource.onmessage = async (event) => {
-			const data = JSON.parse(event.data);
-			if (data.type === "refresh" && data.projectName === projectName) {
-				await refreshFileTree();
+		function setupEventSource() {
+			if (eventSource) {
+				eventSource.close();
 			}
-		};
+
+			eventSource = new EventSource(
+				`/api/files/events?project=${encodeURIComponent(projectName)}`,
+			);
+
+			eventSource.addEventListener("open", () => {
+				retryCount = 0;
+				setIsConnected(true);
+			});
+
+			eventSource.addEventListener("error", (event) => {
+				setIsConnected(false);
+				console.error("SSE connection error:", event);
+
+				if (retryCount < maxRetries) {
+					retryCount++;
+					// Exponential backoff: 1s, 2s, 4s
+					const delay = Math.pow(2, retryCount - 1) * 1000;
+					setTimeout(setupEventSource, delay);
+				}
+			});
+
+			eventSource.addEventListener("message", async (event) => {
+				try {
+					const data = JSON.parse(event.data);
+					switch (data.type) {
+						case "connected":
+							setIsConnected(true);
+							break;
+						case "refresh":
+							if (data.projectName === projectName) {
+								await refreshFileTree();
+							}
+							break;
+						case "heartbeat":
+							// Heartbeat received, connection is alive
+							setIsConnected(true);
+							break;
+					}
+				} catch (error) {
+					console.error("Error processing SSE message:", error);
+				}
+			});
+		}
+
+		setupEventSource();
 
 		return () => {
-			eventSource.close();
+			if (eventSource) {
+				eventSource.close();
+			}
 		};
 	}, [projectName]);
 
@@ -217,17 +264,22 @@ export function FileExplorer({
 		<div className="flex h-full flex-col overflow-hidden">
 			<div className="flex items-center justify-between border-b p-2">
 				<span className="text-sm font-medium">Files</span>
-				<Button
-					variant="ghost"
-					size="icon"
-					className="h-8 w-8"
-					onClick={refreshFileTree}
-					disabled={isRefreshing}
-				>
-					<RefreshCw
-						className={cn("h-4 w-4", isRefreshing && "animate-spin")}
-					/>
-				</Button>
+				<div className="flex items-center gap-2">
+					{!isConnected && (
+						<span className="text-xs text-yellow-500">⚠️ Reconnecting...</span>
+					)}
+					<Button
+						variant="ghost"
+						size="icon"
+						className="h-8 w-8"
+						onClick={refreshFileTree}
+						disabled={isRefreshing}
+					>
+						<RefreshCw
+							className={cn("h-4 w-4", isRefreshing && "animate-spin")}
+						/>
+					</Button>
+				</div>
 			</div>
 			<ScrollArea className="flex-1">
 				<div className="p-2">
