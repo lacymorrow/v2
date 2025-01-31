@@ -6,6 +6,94 @@ import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
+// Ignore patterns for file tree
+const IGNORE_PATTERNS = [
+	// Dependencies and package management
+	'node_modules',
+	'pnpm-lock.yaml',
+	'package-lock.json',
+	'yarn.lock',
+	'bun.lockb',
+
+	// Build outputs
+	'dist',
+	'build',
+	'out',
+	'.next',
+	'.nuxt',
+	'.output',
+
+	// Cache and temp
+	'.cache',
+	'tmp',
+	'temp',
+	'.temp',
+	'.tmp',
+
+	// Dev tools and IDE
+	'.git',
+	'.svn',
+	'.idea',
+	'.vscode',
+	'.DS_Store',
+	'thumbs.db',
+	'.turbo',
+
+	// Test and coverage
+	'coverage',
+	'.nyc_output',
+	'__tests__',
+	'__snapshots__',
+	'*.test.*',
+	'*.spec.*',
+
+	// Logs and debug
+	'*.log',
+	'npm-debug.log*',
+	'yarn-debug.log*',
+	'yarn-error.log*',
+	'pnpm-debug.log*',
+
+	// Environment and secrets
+	'.env*',
+	'*.local',
+
+	// Vite/React specific
+	'vite.config.ts',
+	'vite.config.js',
+	'tsconfig.json',
+	'tsconfig.*.json',
+	'.eslintrc.*',
+	'.prettierrc.*',
+	'.stylelintrc.*',
+	'postcss.config.*',
+	'tailwind.config.*',
+	'.browserslistrc',
+	'README.md',
+	'CHANGELOG.md',
+	'LICENSE',
+	'stats.html',
+
+	// Misc development files
+	'*.tsbuildinfo',
+	'.editorconfig',
+	'.gitignore',
+	'.npmrc',
+	'.yarnrc',
+	'*.map'
+];
+
+function shouldIgnorePath(pathToCheck: string): boolean {
+	const basename = path.basename(pathToCheck);
+	return IGNORE_PATTERNS.some(pattern => {
+		if (pattern.includes('*')) {
+			const regex = new RegExp('^' + pattern.replace('*', '.*') + '$');
+			return regex.test(basename);
+		}
+		return basename === pattern;
+	});
+}
+
 export interface TreeNode {
 	name: string;
 	path: string;
@@ -18,9 +106,18 @@ export interface TreeNode {
  */
 async function buildFileTree(dirPath: string, relativePath = ""): Promise<TreeNode> {
 	console.log(`Building file tree for directory: ${dirPath}`);
-	console.log(`Relative path: ${relativePath}`);
 
 	const name = path.basename(dirPath);
+	if (shouldIgnorePath(dirPath)) {
+		console.log(`Ignoring path: ${dirPath}`);
+		return {
+			name,
+			path: relativePath,
+			type: "directory",
+			children: {},
+		};
+	}
+
 	const node: TreeNode = {
 		name,
 		path: relativePath,
@@ -31,36 +128,41 @@ async function buildFileTree(dirPath: string, relativePath = ""): Promise<TreeNo
 	try {
 		// Create directory if it doesn't exist
 		await fs.mkdir(dirPath, { recursive: true });
-		console.log(`Reading directory contents: ${dirPath}`);
+
+		// Read all entries at once
 		const entries = await fs.readdir(dirPath, { withFileTypes: true });
 		console.log(`Found ${entries.length} entries in ${dirPath}`);
 
-		for (const entry of entries) {
+		// Process directories first for better UX
+		const dirs = entries.filter(e => e.isDirectory() && !shouldIgnorePath(e.name));
+		const files = entries.filter(e => e.isFile() && !shouldIgnorePath(e.name));
+
+		// Process directories in parallel
+		const dirPromises = dirs.map(async entry => {
 			const childPath = path.join(dirPath, entry.name);
 			const childRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+			node.children[entry.name] = await buildFileTree(childPath, childRelativePath);
+		});
 
-			console.log(`Processing entry: ${entry.name} (${entry.isDirectory() ? 'directory' : 'file'})`);
-			console.log(`Child path: ${childPath}`);
-			console.log(`Child relative path: ${childRelativePath}`);
-
-			if (entry.isDirectory()) {
-				node.children[entry.name] = await buildFileTree(childPath, childRelativePath);
-			} else {
-				node.children[entry.name] = {
-					name: entry.name,
-					path: childRelativePath,
-					type: "file",
-					children: {},
-				};
-			}
+		// Add files while directories are processing
+		for (const entry of files) {
+			const childRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+			node.children[entry.name] = {
+				name: entry.name,
+				path: childRelativePath,
+				type: "file",
+				children: {},
+			};
 		}
 
-		console.log(`Completed directory ${dirPath}, found children:`, Object.keys(node.children));
+		// Wait for all directories to be processed
+		await Promise.all(dirPromises);
+
+		const visibleChildren = Object.keys(node.children).filter(k => !shouldIgnorePath(k));
+		console.log(`Completed directory ${dirPath}, found visible children:`, visibleChildren);
 	} catch (error) {
 		console.error(`Error building file tree for ${dirPath}:`, error);
 		console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
-		// Return empty directory node on error
-		return node;
 	}
 
 	return node;

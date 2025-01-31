@@ -26,6 +26,61 @@ export const STATIC_BUILDS_PATH = process.env.STATIC_BUILDS_PATH
 const TEMPLATE_PATH = path.join(process.cwd(), 'vite-project');
 const CACHED_MODULES_PATH = path.join(TEMPLATE_PATH, 'node_modules');
 
+// Files to exclude when copying template
+const EXCLUDE_FROM_TEMPLATE = [
+	// Dependencies and package management
+	'node_modules',
+	'pnpm-lock.yaml',
+	'package-lock.json',
+	'yarn.lock',
+	'bun.lockb',
+
+	// Build outputs
+	'dist',
+	'build',
+	'out',
+	'.next',
+	'.nuxt',
+	'.output',
+
+	// Cache and temp
+	'.cache',
+	'tmp',
+	'temp',
+	'.temp',
+	'.tmp',
+
+	// Dev tools and IDE
+	'.git',
+	'.svn',
+	'.idea',
+	'.vscode',
+	'.DS_Store',
+	'thumbs.db',
+	'.turbo',
+
+	// Test and coverage
+	'coverage',
+	'.nyc_output',
+	'__tests__',
+	'__snapshots__',
+
+	// Logs and debug
+	'*.log',
+	'npm-debug.log*',
+	'yarn-debug.log*',
+	'yarn-error.log*',
+	'pnpm-debug.log*',
+
+	// Environment and secrets
+	'.env*',
+	'*.local',
+];
+
+function shouldExclude(src: string): boolean {
+	return EXCLUDE_FROM_TEMPLATE.some(pattern => src.includes(pattern));
+}
+
 export async function generateApp({
 	prompt,
 	name,
@@ -67,25 +122,35 @@ export async function generateApp({
 			fs.mkdir(appPath, { recursive: true }),
 		]);
 
-		// Copy template files
+		// Copy template files (excluding node_modules and other unnecessary files)
 		notify("Copying template", 30);
 		await fs.cp(TEMPLATE_PATH, appPath, {
 			recursive: true,
-			filter: (src) => !src.includes('node_modules') && !src.includes('.git'),
+			filter: (src) => !shouldExclude(src),
 		});
 
-		// Install dependencies
-		notify("Installing dependencies", 50);
-		const { stdout: installOutput } = await execAsync('pnpm install --prefer-offline', {
-			cwd: appPath,
-			env: {
-				...process.env,
-				NODE_ENV: 'production',
-			},
-		});
-		console.log('Install output:', installOutput);
+		// Use cached node_modules if available
+		notify("Setting up dependencies", 40);
+		const appModulesPath = path.join(appPath, 'node_modules');
+		const hasCachedModules = await fs.access(CACHED_MODULES_PATH).then(() => true).catch(() => false);
 
-		// Build project
+		if (hasCachedModules) {
+			console.log('Using cached node_modules');
+			await fs.cp(CACHED_MODULES_PATH, appModulesPath, { recursive: true });
+			// Quick install to ensure everything is linked correctly
+			await execAsync('pnpm install --prefer-offline --no-frozen-lockfile', {
+				cwd: appPath,
+				env: { ...process.env, NODE_ENV: 'production' },
+			});
+		} else {
+			console.log('No cached node_modules, performing full install');
+			await execAsync('pnpm install --prefer-offline', {
+				cwd: appPath,
+				env: { ...process.env, NODE_ENV: 'production' },
+			});
+		}
+
+		// Build project with optimizations
 		notify("Building project", 70);
 		const { stdout: buildOutput } = await execAsync('pnpm build', {
 			cwd: appPath,
@@ -97,7 +162,7 @@ export async function generateApp({
 		});
 		console.log('Build output:', buildOutput);
 
-		// Verify dist directory exists
+		// Verify and copy build
 		const distPath = path.join(appPath, 'dist');
 		const distExists = await fs.access(distPath).then(() => true).catch(() => false);
 		if (!distExists) {
