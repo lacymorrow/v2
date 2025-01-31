@@ -1,15 +1,29 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, SendHorizontal } from "lucide-react";
+import {
+	useEffect,
+	useRef,
+	useState,
+	useCallback,
+	type FormEvent,
+} from "react";
+import type { Model } from "@/server/services/chat-service";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { env } from "@/env";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { CodeWindow } from "@/components/ui/code-window";
-import { Loader2 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
-import type { Model } from "@/server/services/chat-service";
-import { type FormEvent } from "react";
 
 interface Message {
 	role: "user" | "assistant";
@@ -17,55 +31,101 @@ interface Message {
 	id: string;
 }
 
-function ChatMessage({ role, content, id }: Message) {
-	return (
-		<div
-			key={id}
-			className={cn(
-				"flex flex-col gap-2 rounded-lg p-4",
-				role === "assistant" ? "bg-muted" : "bg-primary/5",
-			)}
-		>
-			<div className="flex items-center gap-2">
-				<div
-					className={cn(
-						"text-xs font-medium",
-						role === "assistant" ? "text-primary" : "text-muted-foreground",
-					)}
-				>
-					{role === "assistant" ? "AI Assistant" : "You"}
-				</div>
-			</div>
-			<div className="prose prose-sm max-w-none whitespace-pre-wrap dark:prose-invert">
-				{content}
-			</div>
-		</div>
-	);
-}
-
 interface ChatProps {
 	onGenerate: (prompt: string) => Promise<void>;
 	isGenerating: boolean;
 	generationStatus?: { step: string; progress: number } | null;
+	projectName?: string | null;
+}
+
+function ChatMessage({ role, content }: Message) {
+	return (
+		<div
+			className={cn(
+				"flex flex-col gap-2 rounded-lg p-4",
+				role === "assistant"
+					? "bg-muted/50"
+					: "bg-primary text-primary-foreground",
+			)}
+		>
+			<div className="flex items-center gap-2 text-xs">
+				<span className="font-medium">
+					{role === "assistant" ? "AI Assistant" : "You"}
+				</span>
+			</div>
+			<div className="whitespace-pre-wrap text-sm">{content}</div>
+		</div>
+	);
 }
 
 export function Chat({
 	onGenerate,
 	isGenerating,
 	generationStatus,
+	projectName,
 }: ChatProps) {
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [model, setModel] = useState<Model>("gpt-3.5-turbo");
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const messagesEndRef = useRef<HTMLDivElement>(null);
 
-	// Scroll to bottom when messages change
+	const scrollToBottom = useCallback(() => {
+		messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+	}, []);
+
 	useEffect(() => {
-		const scrollElement = scrollRef.current;
-		if (scrollElement) {
-			scrollElement.scrollTop = scrollElement.scrollHeight;
+		scrollToBottom();
+	}, [scrollToBottom, messages.length, isGenerating]);
+
+	async function handleFileOperation(content: string) {
+		if (content.startsWith("!read ")) {
+			const path = content.slice(6).trim();
+			try {
+				const response = await fetch("/api/chat", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						fileOperation: {
+							type: "read",
+							path,
+						},
+					}),
+				});
+
+				if (!response.ok) throw new Error("Failed to read file");
+				const { content: fileContent } = await response.json();
+				return `Content of ${path}:\n\`\`\`\n${fileContent}\n\`\`\``;
+			} catch (error) {
+				return `Error reading file: ${error instanceof Error ? error.message : "Unknown error"}`;
+			}
 		}
-	}, [messages]);
+
+		if (content.startsWith("!edit ")) {
+			const [, path, ...contentParts] = content.slice(6).split(" ");
+			const fileContent = contentParts.join(" ");
+			try {
+				const response = await fetch("/api/chat", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						fileOperation: {
+							type: "edit",
+							path,
+							content: fileContent,
+						},
+					}),
+				});
+
+				if (!response.ok) throw new Error("Failed to edit file");
+				return `Successfully edited ${path}`;
+			} catch (error) {
+				return `Error editing file: ${error instanceof Error ? error.message : "Unknown error"}`;
+			}
+		}
+
+		return content;
+	}
 
 	async function handleSubmit(event: FormEvent) {
 		event.preventDefault();
@@ -86,6 +146,7 @@ export function Chat({
 				body: JSON.stringify({
 					messages: [...messages, { role: "user", content: userMessage }],
 					model,
+					projectName,
 				}),
 			});
 
@@ -106,7 +167,8 @@ export function Chat({
 				if (done) break;
 
 				const text = new TextDecoder().decode(value);
-				assistantMessage += text;
+				const processedText = await handleFileOperation(text);
+				assistantMessage += processedText;
 
 				setMessages((prev) => [
 					...prev.slice(0, -1),
@@ -150,6 +212,7 @@ export function Chat({
 							)}
 						</div>
 					)}
+					<div ref={messagesEndRef} />
 				</div>
 			</ScrollArea>
 

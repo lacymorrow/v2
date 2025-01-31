@@ -142,6 +142,7 @@ export default function HomePage() {
 										onGenerate={handleGenerate}
 										isGenerating={isLoading}
 										generationStatus={generationStatus}
+										projectName={projectName}
 									/>
 								</ResizablePanel>
 							</>

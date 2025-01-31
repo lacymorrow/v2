@@ -24,18 +24,11 @@ interface ChatOptions {
 	model?: Model;
 	temperature?: number;
 	systemPrompt?: string;
+	projectName?: string;
 }
 
-interface BaseCodeBlock {
-	type?: string;
-	project?: string;
-	file?: string;
-	code?: string;
-}
-
-interface ValidCodeBlock {
+interface CodeBlock {
 	type: string;
-	project: string;
 	file: string;
 	code: string;
 }
@@ -106,28 +99,30 @@ const defaultOptions: ChatOptions = {
 	temperature: 0.7,
 };
 
-function validateCodeBlock(block: BaseCodeBlock): ValidCodeBlock | null {
-	if (!block.file || !block.type || !block.code) {
-		return null;
-	}
-	return {
-		type: block.type,
-		project: block.project || '',
-		file: block.file,
-		code: block.code
-	};
-}
-
-function extractCodeBlocks(content: string): BaseCodeBlock[] {
-	const codeBlockRegex = /```([\w]+)\s+project=["']([^"']+)["']\s+file=["']([^"']+)["'](?:\s+type=["'][^"']+["'])?\s*\n([\s\S]*?)```/g;
-	const blocks: BaseCodeBlock[] = [];
+// Function to extract code blocks and their metadata from MDX content
+function extractCodeBlocks(content: string): CodeBlock[] {
+	const codeBlockRegex = /```([\w]+)(?:\s+project=["'][^"']+["'])?\s+file=["']([^"']+)["'](?:\s+type=["'][^"']+["'])?\s*\n([\s\S]*?)```/g;
+	const blocks: CodeBlock[] = [];
 
 	console.log("Attempting to extract code blocks from content:", `${content.substring(0, 200)}...`);
 
 	let match: RegExpExecArray | null = codeBlockRegex.exec(content);
 	while (match !== null) {
-		const [, type, project, file, code] = match;
-		blocks.push({ type, project, file, code });
+		const [, type, file, code] = match;
+
+		if (type && file && code) {
+			const block: CodeBlock = {
+				type,
+				file,
+				code: code.trim()
+			};
+			blocks.push(block);
+			console.log("Added code block:", {
+				type: block.type,
+				file: block.file,
+				codeLength: block.code.length
+			});
+		}
 		match = codeBlockRegex.exec(content);
 	}
 
@@ -135,59 +130,60 @@ function extractCodeBlocks(content: string): BaseCodeBlock[] {
 	return blocks;
 }
 
-async function handleCodeBlocks(blocks: BaseCodeBlock[]): Promise<string> {
+// Function to handle code blocks
+async function handleCodeBlocks(blocks: CodeBlock[], projectName?: string): Promise<string> {
 	let result = "";
 
-	// Get the most recent project
-	const projects = await fs.readdir(APP_STORAGE_PATH)
-		.then(files => files.filter(file => !file.startsWith('.')))
-		.catch(() => []);
-
-	if (!projects.length) {
-		return "❌ No project exists yet. Please click 'New Project' to generate a project first, then I can add components to it.\n";
+	// First check if we have a project name
+	if (!projectName) {
+		return "❌ No project specified. Please generate a project first.\n";
 	}
 
-	const mostRecentProject = projects[projects.length - 1];
+	// Check if the project exists
+	const projectExists = await fs.access(path.join(APP_STORAGE_PATH, projectName))
+		.then(() => true)
+		.catch(() => false);
+
+	if (!projectExists) {
+		return `❌ Project "${projectName}" does not exist. Please generate a project first.\n`;
+	}
 
 	for (const block of blocks) {
-		const validBlock = validateCodeBlock(block);
-		if (!validBlock) {
-			result += "❌ Error: Invalid code block - missing required fields\n";
-			continue;
-		}
-
 		console.log("Processing code block:", {
-			type: validBlock.type,
-			file: validBlock.file,
-			codeLength: validBlock.code.length,
-			targetProject: mostRecentProject
+			type: block.type,
+			file: block.file,
+			codeLength: block.code.length,
+			projectName
 		});
 
 		try {
 			// Add "use client" directive for React components if needed
-			const needsClientDirective = validBlock.type.includes("x") && !validBlock.code.includes('"use client"');
+			const needsClientDirective = block.type.includes("x") && !block.code.includes('"use client"');
 			const codeWithDirective = needsClientDirective
-				? `"use client";\n\n${validBlock.code}`
-				: validBlock.code;
+				? `"use client";\n\n${block.code}`
+				: block.code;
 
-			// Determine the correct file path based on the file type
-			const filePath = validBlock.file.startsWith("src/")
-				? validBlock.file
-				: `src/components/${validBlock.file}`;
+			// Determine the correct file path based on the file type and ensure it's within the project's src directory
+			let filePath = block.file;
+			if (!filePath.startsWith("src/")) {
+				filePath = block.type.includes("x")
+					? `src/components/${block.file}`
+					: `src/${block.file}`;
+			}
 
-			// Write to the most recent project, ignoring the project specified in the block
-			await writeProjectFile(mostRecentProject, filePath, codeWithDirective);
-			result += `✅ Created/updated file: ${filePath} in project ${mostRecentProject}\n`;
+			// Write the file to the project
+			await writeProjectFile(projectName, filePath, codeWithDirective);
+			result += `✅ Created/updated file: ${filePath} in project ${projectName}\n`;
 
-			// Refresh the file tree
-			await refreshFileTree(mostRecentProject);
+			// Refresh the file tree using the server action
+			try {
+				await refreshFileTree(projectName);
+			} catch (error) {
+				console.error("Failed to refresh file tree:", error);
+			}
 		} catch (error) {
 			console.error("Error handling code block:", error);
-			if (error instanceof Error) {
-				result += `❌ Error: ${error.message}\n`;
-			} else {
-				result += "❌ Error creating/updating file: Unknown error\n";
-			}
+			result += `❌ Error: Failed to process code block for ${block.file}. ${error instanceof Error ? error.message : "Unknown error"}\n`;
 		}
 	}
 
@@ -201,7 +197,7 @@ export async function* streamChat(
 	messages: { role: "user" | "assistant" | "system"; content: string }[],
 	options: ChatOptions = {}
 ) {
-	const { provider = defaultOptions.provider, model = defaultOptions.model, temperature = defaultOptions.temperature } = options;
+	const { provider = defaultOptions.provider, model = defaultOptions.model, temperature = defaultOptions.temperature, projectName } = options;
 	const client = provider === "deepseek" ? deepseek : openai;
 
 	// Add system prompt if not present
@@ -248,7 +244,7 @@ export async function* streamChat(
 			if (blockCount > 0 && blockCount % 2 === 0) {
 				const blocks = extractCodeBlocks(accumulatedContent);
 				if (blocks.length > 0) {
-					const result = await handleCodeBlocks(blocks);
+					const result = await handleCodeBlocks(blocks, projectName);
 					yield result;
 					accumulatedContent = "";
 					currentLine = "";
@@ -273,7 +269,7 @@ export async function* streamChat(
 		if (accumulatedContent) {
 			const blocks = extractCodeBlocks(accumulatedContent);
 			if (blocks.length > 0) {
-				const result = await handleCodeBlocks(blocks);
+				const result = await handleCodeBlocks(blocks, projectName);
 				yield result;
 			}
 			accumulatedContent = "";

@@ -11,7 +11,7 @@ interface FileOperation {
 }
 
 export async function POST(req: Request) {
-	const { messages, model, fileOperation } = await req.json();
+	const { messages, model, fileOperation, projectName } = await req.json();
 
 	// Handle file operations if present
 	if (fileOperation) {
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
 			}
 
 			try {
-				for await (const chunk of streamChat(messages, { model })) {
+				for await (const chunk of streamChat(messages, { model, projectName })) {
 					if (!chunk) continue;
 
 					// If chunk contains a newline, process buffer
