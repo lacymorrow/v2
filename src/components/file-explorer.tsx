@@ -2,7 +2,14 @@
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, File, Folder, Loader2 } from "lucide-react";
+import {
+	ChevronDown,
+	ChevronRight,
+	File,
+	Folder,
+	Loader2,
+	RefreshCw,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
 import { useProjectStore } from "@/hooks/use-project-store";
@@ -102,33 +109,19 @@ export function FileExplorer({
 	projectName,
 	initialTree,
 }: FileExplorerProps) {
-	console.log("FileExplorer rendered with:", {
-		projectName,
-		selectedFile,
-		hasInitialTree: !!initialTree,
-		initialTreeStructure: initialTree
-			? {
-					name: initialTree.name,
-					childCount: Object.keys(initialTree.children).length,
-					children: Object.keys(initialTree.children),
-				}
-			: null,
-	});
-
 	const [fileTree, setFileTree] = useState<TreeNode | null>(
 		initialTree ?? null,
 	);
 	const [isLoading, setIsLoading] = useState(!initialTree);
+	const [isRefreshing, setIsRefreshing] = useState(false);
 
 	useEffect(() => {
 		async function loadFileTree() {
 			if (!projectName) {
-				console.log("No project name provided, clearing file tree");
 				setFileTree(null);
 				return;
 			}
 
-			console.log(`Loading file tree for project: ${projectName}`);
 			setIsLoading(true);
 			try {
 				const response = await fetch(
@@ -142,12 +135,6 @@ export function FileExplorer({
 				);
 				if (!response.ok) throw new Error("Failed to load file tree");
 				const data = await response.json();
-				console.log("Received file tree data:", {
-					projectName,
-					treeName: data.tree.name,
-					childCount: Object.keys(data.tree.children).length,
-					children: Object.keys(data.tree.children),
-				});
 				setFileTree(data.tree);
 			} catch (error) {
 				console.error("Failed to load file tree:", error);
@@ -158,6 +145,50 @@ export function FileExplorer({
 
 		loadFileTree();
 	}, [projectName]);
+
+	// Listen for file tree changes
+	useEffect(() => {
+		if (!projectName) return;
+
+		const eventSource = new EventSource(
+			`/api/files/events?project=${encodeURIComponent(projectName)}`,
+		);
+
+		eventSource.onmessage = async (event) => {
+			const data = JSON.parse(event.data);
+			if (data.type === "refresh" && data.projectName === projectName) {
+				await refreshFileTree();
+			}
+		};
+
+		return () => {
+			eventSource.close();
+		};
+	}, [projectName]);
+
+	async function refreshFileTree() {
+		if (!projectName || isRefreshing) return;
+
+		setIsRefreshing(true);
+		try {
+			const response = await fetch(
+				`/api/files/tree?project=${encodeURIComponent(projectName)}`,
+				{
+					cache: "no-store",
+					headers: {
+						Accept: "application/json",
+					},
+				},
+			);
+			if (!response.ok) throw new Error("Failed to load file tree");
+			const data = await response.json();
+			setFileTree(data.tree);
+		} catch (error) {
+			console.error("Failed to refresh file tree:", error);
+		} finally {
+			setIsRefreshing(false);
+		}
+	}
 
 	if (!projectName || isLoading) {
 		return (
@@ -184,6 +215,20 @@ export function FileExplorer({
 
 	return (
 		<div className="flex h-full flex-col overflow-hidden">
+			<div className="flex items-center justify-between border-b p-2">
+				<span className="text-sm font-medium">Files</span>
+				<Button
+					variant="ghost"
+					size="icon"
+					className="h-8 w-8"
+					onClick={refreshFileTree}
+					disabled={isRefreshing}
+				>
+					<RefreshCw
+						className={cn("h-4 w-4", isRefreshing && "animate-spin")}
+					/>
+				</Button>
+			</div>
 			<ScrollArea className="flex-1">
 				<div className="p-2">
 					<TreeNodeComponent

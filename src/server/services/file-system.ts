@@ -105,11 +105,8 @@ export interface TreeNode {
  * Recursively builds a file tree from a directory
  */
 async function buildFileTree(dirPath: string, relativePath = ""): Promise<TreeNode> {
-	console.log(`Building file tree for directory: ${dirPath}`);
-
 	const name = path.basename(dirPath);
 	if (shouldIgnorePath(dirPath)) {
-		console.log(`Ignoring path: ${dirPath}`);
 		return {
 			name,
 			path: relativePath,
@@ -131,7 +128,6 @@ async function buildFileTree(dirPath: string, relativePath = ""): Promise<TreeNo
 
 		// Read all entries at once
 		const entries = await fs.readdir(dirPath, { withFileTypes: true });
-		console.log(`Found ${entries.length} entries in ${dirPath}`);
 
 		// Process directories first for better UX
 		const dirs = entries.filter(e => e.isDirectory() && !shouldIgnorePath(e.name));
@@ -157,12 +153,8 @@ async function buildFileTree(dirPath: string, relativePath = ""): Promise<TreeNo
 
 		// Wait for all directories to be processed
 		await Promise.all(dirPromises);
-
-		const visibleChildren = Object.keys(node.children).filter(k => !shouldIgnorePath(k));
-		console.log(`Completed directory ${dirPath}, found visible children:`, visibleChildren);
 	} catch (error) {
 		console.error(`Error building file tree for ${dirPath}:`, error);
-		console.error('Stack trace:', error instanceof Error ? error.stack : 'No stack trace');
 	}
 
 	return node;
@@ -172,30 +164,19 @@ async function buildFileTree(dirPath: string, relativePath = ""): Promise<TreeNo
  * Gets the file tree for a project
  */
 export async function getProjectFileTree(projectName: string): Promise<TreeNode> {
-	console.log(`Getting file tree for project: ${projectName}`);
 	const projectPath = path.join(APP_STORAGE_PATH, projectName);
-	console.log(`Full project path: ${projectPath}`);
 
 	try {
 		const exists = await fs.access(projectPath).then(() => true).catch(() => false);
-		console.log(`Project directory exists: ${exists}`);
-
-		if (exists) {
-			const stats = await fs.stat(projectPath);
-			console.log(`Project directory stats:`, {
-				isDirectory: stats.isDirectory(),
-				size: stats.size,
-				created: stats.birthtime,
-				modified: stats.mtime
-			});
+		if (!exists) {
+			throw new Error(`Project directory does not exist: ${projectName}`);
 		}
 	} catch (error) {
 		console.error(`Error checking project directory:`, error);
+		throw error;
 	}
 
-	const tree = await buildFileTree(projectPath);
-	console.log(`Complete file tree for ${projectName}:`, JSON.stringify(tree, null, 2));
-	return tree;
+	return buildFileTree(projectPath);
 }
 
 /**
