@@ -1,0 +1,45 @@
+# Vite Templates
+
+## Overview
+
+The project uses two Vite template directories for different purposes:
+
+1. `/templates/vite/` - Source template
+2. `/vite-project/` - Pre-built template with cached dependencies
+
+## Template Purposes
+
+### Source Template (`/templates/vite/`)
+- Acts as the source of truth for the template structure
+- Contains the base configuration and structure for new Vite projects
+- Used as a reference for template updates and modifications
+- Maintains a clean, dependency-free version of the template
+
+### Pre-built Template (`/vite-project/`)
+- Contains a fully installed `node_modules` directory
+- Used as a performance optimization for the app generation process
+- Serves as the `TEMPLATE_PATH` in the app generator
+- Provides cached dependencies via `CACHED_MODULES_PATH`
+
+## How They Work Together
+
+The app generation process (`src/server/services/app-generator.ts`) uses these templates efficiently:
+
+1. Copies template files from `vite-project` (excluding `node_modules` and other unnecessary files)
+2. If cached `node_modules` exists in `vite-project`:
+   - Copies the cached modules
+   - Performs a quick install to ensure correct linking
+3. If no cached modules exist:
+   - Performs a full dependency installation
+
+## Benefits
+
+This two-template approach provides several advantages:
+1. **Faster App Generation**: Reuses pre-built dependencies
+2. **Clean Reference**: Maintains a clean template source
+3. **Optimized Builds**: Utilizes cached node_modules
+4. **Clear Separation**: Separates source from build artifacts
+
+## Important Note
+
+⚠️ **DO NOT DELETE** either template directory as they serve different but complementary purposes in the app generation process.
