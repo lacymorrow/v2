@@ -183,14 +183,16 @@ export function FileExplorer({
 	}
 
 	return (
-		<ScrollArea className="h-full">
-			<div className="p-2">
-				<TreeNodeComponent
-					node={fileTree}
-					selectedFile={selectedFile}
-					projectName={projectName}
-				/>
-			</div>
-		</ScrollArea>
+		<div className="flex h-full flex-col overflow-hidden">
+			<ScrollArea className="flex-1">
+				<div className="p-2">
+					<TreeNodeComponent
+						node={fileTree}
+						selectedFile={selectedFile}
+						projectName={projectName}
+					/>
+				</div>
+			</ScrollArea>
+		</div>
 	);
 }

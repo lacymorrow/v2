@@ -35,10 +35,10 @@ export default function HomePage() {
 		reset,
 	} = useProjectStore();
 	const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-	const [activeTab, setActiveTab] = useState<"code" | "preview">("code");
+	const [activeTab, setActiveTab] = useState<"code" | "preview">("preview");
 	const [showFileTree, setShowFileTree] = useState(true);
 	const [showChat, setShowChat] = useState(true);
-	const [showPreview, setShowPreview] = useState(false);
+	const [showPreview, setShowPreview] = useState(true);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 
 	// Reset loading state on mount
@@ -97,7 +97,7 @@ export default function HomePage() {
 	}
 
 	return (
-		<div className="flex h-screen flex-col">
+		<div className="flex h-screen flex-col overflow-hidden">
 			<ProjectHeader
 				onGenerate={handleGenerate}
 				isGenerating={isLoading}
@@ -111,7 +111,7 @@ export default function HomePage() {
 				onToggleChat={() => setShowChat(!showChat)}
 				onTogglePreview={() => setShowPreview(!showPreview)}
 			/>
-			<div className="flex-1 p-4">
+			<div className="flex-1 overflow-hidden p-4">
 				<div className="h-full overflow-hidden rounded-lg border bg-card">
 					<ResizablePanelGroup
 						direction={isDesktop ? "horizontal" : "vertical"}

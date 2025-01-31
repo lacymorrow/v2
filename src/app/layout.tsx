@@ -20,7 +20,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 	return (
 		<RootLayout>
 			{children}
-			<ThemeToggle />
 			<Toaster />
 		</RootLayout>
 	);

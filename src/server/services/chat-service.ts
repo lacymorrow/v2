@@ -26,7 +26,14 @@ interface ChatOptions {
 	systemPrompt?: string;
 }
 
-interface CodeBlock {
+interface BaseCodeBlock {
+	type?: string;
+	project?: string;
+	file?: string;
+	code?: string;
+}
+
+interface ValidCodeBlock {
 	type: string;
 	project: string;
 	file: string;
@@ -99,32 +106,28 @@ const defaultOptions: ChatOptions = {
 	temperature: 0.7,
 };
 
-// Function to extract code blocks and their metadata from MDX content
-function extractCodeBlocks(content: string): CodeBlock[] {
+function validateCodeBlock(block: BaseCodeBlock): ValidCodeBlock | null {
+	if (!block.file || !block.type || !block.code) {
+		return null;
+	}
+	return {
+		type: block.type,
+		project: block.project || '',
+		file: block.file,
+		code: block.code
+	};
+}
+
+function extractCodeBlocks(content: string): BaseCodeBlock[] {
 	const codeBlockRegex = /```([\w]+)\s+project=["']([^"']+)["']\s+file=["']([^"']+)["'](?:\s+type=["'][^"']+["'])?\s*\n([\s\S]*?)```/g;
-	const blocks: CodeBlock[] = [];
+	const blocks: BaseCodeBlock[] = [];
 
 	console.log("Attempting to extract code blocks from content:", `${content.substring(0, 200)}...`);
 
 	let match: RegExpExecArray | null = codeBlockRegex.exec(content);
 	while (match !== null) {
 		const [, type, project, file, code] = match;
-
-		if (type && project && file && code) {
-			const block: CodeBlock = {
-				type,
-				project,
-				file,
-				code: code.trim()
-			};
-			blocks.push(block);
-			console.log("Added code block:", {
-				type: block.type,
-				project: block.project,
-				file: block.file,
-				codeLength: block.code.length
-			});
-		}
+		blocks.push({ type, project, file, code });
 		match = codeBlockRegex.exec(content);
 	}
 
@@ -132,47 +135,58 @@ function extractCodeBlocks(content: string): CodeBlock[] {
 	return blocks;
 }
 
-// Function to handle code blocks
-async function handleCodeBlocks(blocks: CodeBlock[]): Promise<string> {
+async function handleCodeBlocks(blocks: BaseCodeBlock[]): Promise<string> {
 	let result = "";
 
+	// Get the most recent project
+	const projects = await fs.readdir(APP_STORAGE_PATH)
+		.then(files => files.filter(file => !file.startsWith('.')))
+		.catch(() => []);
+
+	if (!projects.length) {
+		return "❌ No project exists yet. Please click 'New Project' to generate a project first, then I can add components to it.\n";
+	}
+
+	const mostRecentProject = projects[projects.length - 1];
+
 	for (const block of blocks) {
+		const validBlock = validateCodeBlock(block);
+		if (!validBlock) {
+			result += "❌ Error: Invalid code block - missing required fields\n";
+			continue;
+		}
+
 		console.log("Processing code block:", {
-			type: block.type,
-			project: block.project,
-			file: block.file,
-			codeLength: block.code.length
+			type: validBlock.type,
+			file: validBlock.file,
+			codeLength: validBlock.code.length,
+			targetProject: mostRecentProject
 		});
 
 		try {
 			// Add "use client" directive for React components if needed
-			const needsClientDirective = block.type.includes("x") && !block.code.includes('"use client"');
+			const needsClientDirective = validBlock.type.includes("x") && !validBlock.code.includes('"use client"');
 			const codeWithDirective = needsClientDirective
-				? `"use client";\n\n${block.code}`
-				: block.code;
+				? `"use client";\n\n${validBlock.code}`
+				: validBlock.code;
 
 			// Determine the correct file path based on the file type
-			const filePath = block.file.startsWith("src/")
-				? block.file
-				: `src/components/${block.file}`;
+			const filePath = validBlock.file.startsWith("src/")
+				? validBlock.file
+				: `src/components/${validBlock.file}`;
 
-			// Write the file to the project - this will now validate the project exists
-			// and trigger a rebuild automatically
-			await writeProjectFile(block.project, filePath, codeWithDirective);
-			result += `✅ Created/updated file: ${filePath} in project ${block.project}\n`;
+			// Write to the most recent project, ignoring the project specified in the block
+			await writeProjectFile(mostRecentProject, filePath, codeWithDirective);
+			result += `✅ Created/updated file: ${filePath} in project ${mostRecentProject}\n`;
 
-			// Refresh the file tree using the server action
-			try {
-				await refreshFileTree(block.project);
-			} catch (error) {
-				console.error("Failed to refresh file tree:", error);
-			}
+			// Refresh the file tree
+			await refreshFileTree(mostRecentProject);
 		} catch (error) {
 			console.error("Error handling code block:", error);
-			if (error instanceof Error && error.message.includes("does not exist")) {
-				result += `❌ Error: Project ${block.project} does not exist. Please generate the project first.\n`;
+			if (error instanceof Error) {
+				result += `❌ Error: ${error.message}\n`;
 			} else {
-				result += `❌ Error creating/updating file: ${error instanceof Error ? error.message : "Unknown error"}\n`;
+				result += "❌ Error creating/updating file: Unknown error\n";
 			}
 		}
 	}
