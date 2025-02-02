@@ -4,20 +4,13 @@ import { CodeEditor } from "@/components/code-editor";
 import { FileExplorer } from "@/components/file-explorer";
 import { Preview } from "@/components/preview";
 import { ProjectHeader } from "@/components/project-header";
-import { ResizablePanels } from "@/components/resizable-panels";
 import { Card } from "@/components/ui/card";
 import { useProjectStore } from "@/hooks/use-project-store";
 import { Progress } from "@/components/ui/progress";
 import { Chat } from "@/components/chat";
 import { cn } from "@/lib/utils";
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState, useEffect } from "react";
-import {
-	ResizablePanelGroup,
-	ResizablePanel,
-	ResizableHandle,
-} from "@/components/ui/resizable";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ResizablePanels } from "@/components/resizable-panels";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { LayoutToggle } from "@/components/layout-toggle";
 
@@ -39,6 +32,7 @@ export default function HomePage() {
 	const [showFileTree, setShowFileTree] = useState(true);
 	const [showChat, setShowChat] = useState(true);
 	const [showPreview, setShowPreview] = useState(true);
+	const [useWebContainer, setUseWebContainer] = useState(false);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 
 	// Reset loading state on mount
@@ -96,12 +90,52 @@ export default function HomePage() {
 		}
 	}
 
+	// Build the panels array based on what's visible
+	const panels = [
+		showFileTree && (
+			<div key="file-tree" className="h-full">
+				<FileExplorer selectedFile={selectedFile} projectName={projectName} />
+			</div>
+		),
+		<div key="main" className="h-full">
+			{showPreview ? (
+				<Preview
+					url={projectUrl}
+					projectName={projectName}
+					useWebContainer={useWebContainer}
+				/>
+			) : (
+				<CodeEditor path={selectedFile} content={fileContent} />
+			)}
+		</div>,
+		showChat && (
+			<div key="chat" className="h-full">
+				<Chat
+					onGenerate={handleGenerate}
+					isGenerating={isLoading}
+					generationStatus={generationStatus}
+					projectName={projectName}
+				/>
+			</div>
+		),
+	].filter(Boolean);
+
+	// Calculate default sizes based on visible panels
+	const defaultSizes = (() => {
+		const count = panels.length;
+		if (count === 1) return [100];
+		if (count === 2) return [20, 80];
+		return [15, 65, 20];
+	})();
+
 	return (
 		<div className="flex h-screen flex-col overflow-hidden">
 			<ProjectHeader
 				onGenerate={handleGenerate}
 				isGenerating={isLoading}
 				projectName={projectName}
+				onToggleWebContainer={() => setUseWebContainer(!useWebContainer)}
+				useWebContainer={useWebContainer}
 			/>
 			<LayoutToggle
 				showFileTree={showFileTree}
@@ -113,41 +147,12 @@ export default function HomePage() {
 			/>
 			<div className="flex-1 overflow-hidden p-4">
 				<div className="h-full overflow-hidden rounded-lg border bg-card">
-					<ResizablePanelGroup
-						direction={isDesktop ? "horizontal" : "vertical"}
+					<ResizablePanels
+						axis={isDesktop ? "x" : "y"}
+						defaultSizes={defaultSizes}
 					>
-						{showFileTree && (
-							<>
-								<ResizablePanel defaultSize={15} minSize={10} maxSize={30}>
-									<FileExplorer
-										selectedFile={selectedFile}
-										projectName={projectName}
-									/>
-								</ResizablePanel>
-								<ResizableHandle withHandle />
-							</>
-						)}
-						<ResizablePanel defaultSize={showPreview ? 65 : 80}>
-							{showPreview ? (
-								<Preview url={projectUrl} />
-							) : (
-								<CodeEditor path={selectedFile} content={fileContent} />
-							)}
-						</ResizablePanel>
-						{showChat && (
-							<>
-								<ResizableHandle withHandle />
-								<ResizablePanel defaultSize={20}>
-									<Chat
-										onGenerate={handleGenerate}
-										isGenerating={isLoading}
-										generationStatus={generationStatus}
-										projectName={projectName}
-									/>
-								</ResizablePanel>
-							</>
-						)}
-					</ResizablePanelGroup>
+						{panels}
+					</ResizablePanels>
 				</div>
 			</div>
 		</div>

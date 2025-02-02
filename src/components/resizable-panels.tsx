@@ -8,7 +8,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 interface ResizablePanelsProps {
 	children: ReactNode[];
@@ -31,7 +31,7 @@ export function ResizablePanels({
 			className={cn("h-full", className)}
 		>
 			{children.map((child, i) => (
-				<>
+				<Fragment key={i}>
 					{i > 0 && (
 						<ResizableHandle withHandle>
 							{i === 1 && (
@@ -49,7 +49,6 @@ export function ResizablePanels({
 						</ResizableHandle>
 					)}
 					<ResizablePanel
-						key={i}
 						defaultSize={defaultSizes[i]}
 						minSize={i === 0 ? 5 : 20}
 						maxSize={i === 0 ? 30 : 95}
@@ -64,7 +63,7 @@ export function ResizablePanels({
 					>
 						{child}
 					</ResizablePanel>
-				</>
+				</Fragment>
 			))}
 		</ResizablePanelGroup>
 	);

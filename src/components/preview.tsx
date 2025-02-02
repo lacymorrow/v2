@@ -9,19 +9,38 @@ import {
 } from "@/components/ui/tooltip";
 import { ExternalLink, Loader2, RefreshCcw } from "lucide-react";
 import { useState } from "react";
+import { WebContainerPreview } from "./web-container/web-container-preview";
 
 interface PreviewProps {
 	url?: string | null;
+	projectName?: string | null;
+	useWebContainer?: boolean;
 }
 
-export function Preview({ url }: PreviewProps) {
+export function Preview({
+	url,
+	projectName,
+	useWebContainer = false,
+}: PreviewProps) {
 	const [isRefreshing, setIsRefreshing] = useState(false);
 	const [key, setKey] = useState(0);
+
+	if (!url && !projectName) {
+		return (
+			<div className="flex h-full items-center justify-center text-muted-foreground">
+				Generate a project to see the preview
+			</div>
+		);
+	}
+
+	if (useWebContainer && projectName) {
+		return <WebContainerPreview projectName={projectName} />;
+	}
 
 	if (!url) {
 		return (
 			<div className="flex h-full items-center justify-center text-muted-foreground">
-				Generate a project to see the preview
+				Loading preview...
 			</div>
 		);
 	}
@@ -32,6 +51,10 @@ export function Preview({ url }: PreviewProps) {
 		await new Promise((resolve) => setTimeout(resolve, 500));
 		setIsRefreshing(false);
 	}
+
+	const previewTitle = projectName
+		? `Preview of ${projectName}`
+		: "Project Preview";
 
 	return (
 		<div className="relative h-full">
@@ -74,6 +97,7 @@ export function Preview({ url }: PreviewProps) {
 					src={url}
 					className="h-full w-full border-none"
 					sandbox="allow-scripts allow-same-origin"
+					title={previewTitle}
 				/>
 			</div>
 		</div>

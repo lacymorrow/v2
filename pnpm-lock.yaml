@@ -378,6 +378,9 @@ importers:
       '@vercel/speed-insights':
         specifier: ^1.1.0
         version: 1.1.0(next@15.1.6(@babel/core@7.26.7)(@opentelemetry/api@1.9.0)(@playwright/test@1.49.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(sass@1.77.4))(react@18.3.1)
+      '@webcontainer/api':
+        specifier: 1.5.1-internal.8
+        version: 1.5.1-internal.8
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2
@@ -7059,6 +7062,9 @@ packages:
 
   '@webassemblyjs/wast-printer@1.14.1':
     resolution: {integrity: sha512-kPSSXE6De1XOR820C90RIo2ogvZG+c3KiHzqUoO/F34Y2shGzesfqv7o57xrxovZJH/MetF5UjroJ/R/3isoiw==}
+
+  '@webcontainer/api@1.5.1-internal.8':
+    resolution: {integrity: sha512-EgtnRLOIFhBiTS/1nQmg3A6RtQXvp+kDK08cbEZZpnXGyaNd1y9dSCJUEn3OUCuHSEZr3LeqBtwR5mYOxFeiUQ==}
 
   '@webgpu/types@0.1.53':
     resolution: {integrity: sha512-x+BLw/opaz9LiVyrMsP75nO1Rg0QfrACUYIbVSfGwY/w0DiWIPYYrpte6us//KZXinxFAOJl0+C17L1Vi2vmDw==}
@@ -23207,6 +23213,8 @@ snapshots:
     dependencies:
       '@webassemblyjs/ast': 1.14.1
       '@xtuc/long': 4.2.2
+
+  '@webcontainer/api@1.5.1-internal.8': {}
 
   '@webgpu/types@0.1.53': {}
 
