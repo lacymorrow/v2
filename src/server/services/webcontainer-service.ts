@@ -227,19 +227,10 @@ export default defineConfig({
 		// Split the stream into two branches
 		const [logStream, urlStream] = serverProcess.output.tee();
 
-		// Log all server output with cleaned formatting
+		// Log all server output
 		logStream.pipeTo(new WritableStream({
 			write(data) {
-				// Clean up AI response formatting
-				const cleanedData = data
-					.replace(/^data:\s*/gm, '')  // Remove data: prefix
-					.replace(/```(?:tsx|ts|jsx|js).*?\n([\s\S]*?)```/g, '$1')  // Clean code blocks
-					.replace(/✅.*?(?:\n|$)/g, '')  // Remove success messages
-					.trim();
-
-				if (cleanedData) {
-					console.log('🌐 [dev server]:', cleanedData);
-				}
+				console.log('🌐 [dev server]:', data);
 			}
 		}));
 
@@ -262,25 +253,16 @@ export default defineConfig({
 				}
 			}, 30000);
 
-			// Listen for the server URL in the output with cleaned formatting
+			// Listen for the server URL in the output
 			urlStream.pipeTo(new WritableStream({
 				async write(data: string) {
 					if (hasResolved) return;
 
-					// Clean up AI response formatting
-					const rawData = data.replace(/^data:\s*/gm, '').trim();
-					console.log('🔍 Raw server output:', rawData);
+					console.log('🔍 Raw server output:', data);
 
 					// Strip ANSI color codes and clean the output
-					const cleanData = rawData
-						.replace(/\x1B\[\d+m/g, '')
-						.replace(/```(?:tsx|ts|jsx|js).*?\n([\s\S]*?)```/g, '$1')
-						.replace(/✅.*?(?:\n|$)/g, '')
-						.trim();
-
-					if (cleanData) {
-						console.log('🧹 Cleaned output:', cleanData);
-					}
+					const cleanData = data.replace(/\x1B\[\d+m/g, '');
+					console.log('🧹 Cleaned output:', cleanData);
 
 					// Only detect port once to ensure consistency
 					if (!detectedPort) {
