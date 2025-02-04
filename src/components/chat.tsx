@@ -39,13 +39,6 @@ interface ChatProps {
 }
 
 function ChatMessage({ role, content }: Message) {
-	// Format the content by removing "data: " prefix and extra newlines
-	const formattedContent = content
-		.split("\n")
-		.map((line) => line.replace(/^data:\s*/, "").trim())
-		.filter((line) => line)
-		.join("\n");
-
 	return (
 		<div
 			className={cn(
@@ -60,9 +53,7 @@ function ChatMessage({ role, content }: Message) {
 					{role === "assistant" ? "AI Assistant" : "You"}
 				</span>
 			</div>
-			<div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm dark:prose-invert">
-				{formattedContent}
-			</div>
+			<div className="whitespace-pre-wrap text-sm">{content}</div>
 		</div>
 	);
 }
@@ -171,32 +162,22 @@ export function Chat({
 				{ role: "assistant", content: "", id: assistantMessageId },
 			]);
 
-			let buffer = "";
 			while (true) {
 				const { done, value } = await reader.read();
 				if (done) break;
 
 				const text = new TextDecoder().decode(value);
-				const lines = text.split("\n");
+				const processedText = await handleFileOperation(text);
+				assistantMessage += processedText;
 
-				for (const line of lines) {
-					if (line.startsWith("data: ")) {
-						const content = line.slice(5).trim();
-						if (content) {
-							buffer = `${buffer}${content}\n`;
-							const processedText = await handleFileOperation(buffer);
-							assistantMessage = processedText;
-							setMessages((prev) => [
-								...prev.slice(0, -1),
-								{
-									role: "assistant",
-									content: assistantMessage,
-									id: assistantMessageId,
-								},
-							]);
-						}
-					}
-				}
+				setMessages((prev) => [
+					...prev.slice(0, -1),
+					{
+						role: "assistant",
+						content: assistantMessage,
+						id: assistantMessageId,
+					},
+				]);
 			}
 		} catch (error) {
 			console.error("Chat error:", error);

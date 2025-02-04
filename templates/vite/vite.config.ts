@@ -1,10 +1,10 @@
-import react from '@vitejs/plugin-react'
-import path from "path"
 import { defineConfig } from "vite"
+import reactSWC from '@vitejs/plugin-react-swc'
+import path from "path"
 
-// https://vite.dev/config/
+// https://vitejs.dev/config/
 export default defineConfig({
-	plugins: [react()],
+	plugins: [reactSWC()],
 	base: './', // Makes assets load correctly when deployed to subdirectories
 	build: {
 		outDir: 'dist',
@@ -18,12 +18,6 @@ export default defineConfig({
 					'react-vendor': ['react', 'react-dom'],
 				},
 			},
-		},
-		// Disable type checking during build
-		typescript: {
-			noEmit: true,
-			skipLibCheck: true,
-			skipDefaultLibCheck: true,
 		},
 	},
 	resolve: {

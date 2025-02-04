@@ -12,7 +12,7 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Download, GitForkIcon, Loader2, Plus, Play } from "lucide-react";
+import { Download, GitForkIcon, Loader2, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -21,16 +21,12 @@ interface ProjectHeaderProps {
 	onGenerate: (prompt: string) => Promise<void>;
 	isGenerating: boolean;
 	projectName?: string | null;
-	onToggleWebContainer?: () => void;
-	useWebContainer?: boolean;
 }
 
 export function ProjectHeader({
 	onGenerate,
 	isGenerating,
 	projectName,
-	onToggleWebContainer,
-	useWebContainer = false,
 }: ProjectHeaderProps) {
 	const [isInstalling, setIsInstalling] = useState(false);
 	const [isPopoverOpen, setIsPopoverOpen] = useState(false);
@@ -102,87 +98,61 @@ export function ProjectHeader({
 			</div>
 			<div className="flex gap-2">
 				<TooltipProvider>
-					{projectName && (
-						<>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button onClick={handleDownload} size="sm" variant="outline">
-										<Download className="mr-2 h-4 w-4" />
-										Download
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent>Download project files</TooltipContent>
-							</Tooltip>
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Button onClick={handleDownload} size="sm" variant="outline">
+								<Download className="mr-2 h-4 w-4" />
+								Download
+							</Button>
+						</TooltipTrigger>
+						<TooltipContent>Download project files</TooltipContent>
+					</Tooltip>
 
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										size="sm"
-										variant={useWebContainer ? "default" : "outline"}
-										onClick={onToggleWebContainer}
-									>
-										<Play className="mr-2 h-4 w-4" />
-										Live Preview
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
+								<PopoverTrigger asChild>
+									<Button size="sm" variant="outline" disabled={isInstalling}>
+										{isInstalling ? (
+											<>
+												<Loader2 className="mr-2 h-4 w-4 animate-spin" />
+												Copying...
+											</>
+										) : (
+											<>
+												<GitForkIcon className="mr-2 h-4 w-4" />
+												Add to Codebase
+											</>
+										)}
 									</Button>
-								</TooltipTrigger>
-								<TooltipContent>
-									{useWebContainer ? "Disable" : "Enable"} live preview
-								</TooltipContent>
-							</Tooltip>
-
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
-										<PopoverTrigger asChild>
+								</PopoverTrigger>
+								<PopoverContent className="w-auto p-4" align="end">
+									<div className="flex flex-col gap-4">
+										<div className="text-sm">
+											Run this command in your project directory:
+										</div>
+										<div className="relative">
+											<pre className="rounded bg-muted px-4 py-3 font-mono text-sm">
+												{installCommand}
+											</pre>
 											<Button
 												size="sm"
-												variant="outline"
-												disabled={isInstalling}
+												className="absolute right-2 top-2"
+												onClick={handleInstall}
 											>
 												{isInstalling ? (
-													<>
-														<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-														Copying...
-													</>
+													<Loader2 className="h-4 w-4 animate-spin" />
 												) : (
-													<>
-														<GitForkIcon className="mr-2 h-4 w-4" />
-														Add to Codebase
-													</>
+													"Copy"
 												)}
 											</Button>
-										</PopoverTrigger>
-										<PopoverContent className="w-auto p-4" align="end">
-											<div className="flex flex-col gap-4">
-												<div className="text-sm">
-													Run this command in your project directory:
-												</div>
-												<div className="relative">
-													<pre className="rounded bg-muted px-4 py-3 font-mono text-sm">
-														{installCommand}
-													</pre>
-													<Button
-														size="sm"
-														className="absolute right-2 top-2"
-														onClick={handleInstall}
-													>
-														{isInstalling ? (
-															<Loader2 className="h-4 w-4 animate-spin" />
-														) : (
-															"Copy"
-														)}
-													</Button>
-												</div>
-											</div>
-										</PopoverContent>
-									</Popover>
-								</TooltipTrigger>
-								<TooltipContent>
-									Install components to your project
-								</TooltipContent>
-							</Tooltip>
-						</>
-					)}
+										</div>
+									</div>
+								</PopoverContent>
+							</Popover>
+						</TooltipTrigger>
+						<TooltipContent>Install components to your project</TooltipContent>
+					</Tooltip>
 
 					<Tooltip>
 						<TooltipTrigger asChild>

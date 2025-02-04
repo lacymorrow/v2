@@ -69,64 +69,7 @@ export async function transformTemplateFiles(projectName: string): Promise<WebCo
 	if ('package.json' in files) {
 		const packageJson = JSON.parse((files['package.json'] as FileEntry).file.contents);
 		packageJson.name = projectName;
-
-		// Add CORS headers to external resources
-		if (!packageJson.dependencies) {
-			packageJson.dependencies = {};
-		}
-		if (!packageJson.devDependencies) {
-			packageJson.devDependencies = {};
-		}
-
-		// Add required dependencies for cross-origin isolation
-		packageJson.dependencies['@webcontainer/api'] = '^1.1.8';
-		packageJson.dependencies['cross-fetch'] = '^4.0.0';
-
-		// Add required Vite dependencies
-		packageJson.devDependencies['vite'] = '^5.0.0';
-		packageJson.devDependencies['@vitejs/plugin-react'] = '^4.2.0';
-		packageJson.devDependencies['@types/react'] = '^18.2.0';
-		packageJson.devDependencies['@types/react-dom'] = '^18.2.0';
-
-		// Update the package.json content
 		(files['package.json'] as FileEntry).file.contents = JSON.stringify(packageJson, null, 2);
-	}
-
-	// Add vite.config.ts if it doesn't exist
-	if (!('vite.config.ts' in files)) {
-		files['vite.config.ts'] = {
-			kind: 'file',
-			file: {
-				contents: `
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-
-// https://vitejs.dev/config/
-export default defineConfig({
-    plugins: [react()],
-    server: {
-        host: true, // Listen on all addresses
-        port: 5173,
-        strictPort: true,
-        cors: {
-            origin: '*',
-            methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-            credentials: true,
-            preflightContinue: false,
-            optionsSuccessStatus: 204
-        },
-        headers: {
-            'Cross-Origin-Opener-Policy': 'same-origin',
-            'Cross-Origin-Embedder-Policy': 'require-corp'
-        },
-        hmr: {
-            clientPort: 443
-        }
-    }
-});
-`
-			}
-		};
 	}
 
 	return files;

@@ -9,10 +9,10 @@ import { useProjectStore } from "@/hooks/use-project-store";
 import { Progress } from "@/components/ui/progress";
 import { Chat } from "@/components/chat";
 import { cn } from "@/lib/utils";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState, useEffect } from "react";
-import { ResizablePanels } from "@/components/resizable-panels";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import { LayoutToggle } from "@/components/layout-toggle";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 export default function HomePage() {
 	const {
@@ -28,11 +28,9 @@ export default function HomePage() {
 		reset,
 	} = useProjectStore();
 	const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-	const [activeTab, setActiveTab] = useState<"code" | "preview">("preview");
 	const [showFileTree, setShowFileTree] = useState(true);
 	const [showChat, setShowChat] = useState(true);
 	const [showPreview, setShowPreview] = useState(true);
-	const [useWebContainer, setUseWebContainer] = useState(false);
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 
 	// Reset loading state on mount
@@ -90,52 +88,12 @@ export default function HomePage() {
 		}
 	}
 
-	// Build the panels array based on what's visible
-	const panels = [
-		showFileTree && (
-			<div key="file-tree" className="h-full">
-				<FileExplorer selectedFile={selectedFile} projectName={projectName} />
-			</div>
-		),
-		<div key="main" className="h-full">
-			{showPreview ? (
-				<Preview
-					url={projectUrl}
-					projectName={projectName}
-					useWebContainer={useWebContainer}
-				/>
-			) : (
-				<CodeEditor path={selectedFile} content={fileContent} />
-			)}
-		</div>,
-		showChat && (
-			<div key="chat" className="h-full">
-				<Chat
-					onGenerate={handleGenerate}
-					isGenerating={isLoading}
-					generationStatus={generationStatus}
-					projectName={projectName}
-				/>
-			</div>
-		),
-	].filter(Boolean);
-
-	// Calculate default sizes based on visible panels
-	const defaultSizes = (() => {
-		const count = panels.length;
-		if (count === 1) return [100];
-		if (count === 2) return [20, 80];
-		return [15, 65, 20];
-	})();
-
 	return (
 		<div className="flex h-screen flex-col overflow-hidden">
 			<ProjectHeader
 				onGenerate={handleGenerate}
 				isGenerating={isLoading}
 				projectName={projectName}
-				onToggleWebContainer={() => setUseWebContainer(!useWebContainer)}
-				useWebContainer={useWebContainer}
 			/>
 			<LayoutToggle
 				showFileTree={showFileTree}
@@ -147,12 +105,42 @@ export default function HomePage() {
 			/>
 			<div className="flex-1 overflow-hidden p-4">
 				<div className="h-full overflow-hidden rounded-lg border bg-card">
-					<ResizablePanels
-						axis={isDesktop ? "x" : "y"}
-						defaultSizes={defaultSizes}
-					>
-						{panels}
-					</ResizablePanels>
+					<div className="grid h-full grid-cols-1 lg:grid-cols-12">
+						{showFileTree && (
+							<div className="col-span-2 border-r">
+								<FileExplorer
+									selectedFile={selectedFile}
+									projectName={projectName}
+								/>
+							</div>
+						)}
+						<div
+							className={cn(
+								"col-span-1",
+								showFileTree ? "lg:col-span-7" : "lg:col-span-9",
+								showChat ? "" : "lg:col-span-10",
+							)}
+						>
+							{showPreview ? (
+								<Preview
+									url={projectUrl}
+									projectName={projectName ?? undefined}
+								/>
+							) : (
+								<CodeEditor path={selectedFile} content={fileContent} />
+							)}
+						</div>
+						{showChat && (
+							<div className="col-span-1 border-l lg:col-span-3">
+								<Chat
+									onGenerate={handleGenerate}
+									isGenerating={isLoading}
+									generationStatus={generationStatus}
+									projectName={projectName ?? undefined}
+								/>
+							</div>
+						)}
+					</div>
 				</div>
 			</div>
 		</div>
