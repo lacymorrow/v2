@@ -86,22 +86,20 @@ export function Preview({ url, projectName }: PreviewProps) {
 			</div>
 
 			{/* Preview Content */}
-			<div className="h-full">
-				{useWebContainer && projectName ? (
-					<WebContainerPreview
-						key={`webcontainer-${projectName}-${Date.now()}`}
-						projectName={projectName}
+			{useWebContainer && projectName ? (
+				<WebContainerPreview
+					key={`webcontainer-${projectName}-${Date.now()}`}
+					projectName={projectName}
+				/>
+			) : (
+				<Card className="h-full w-full overflow-hidden">
+					<iframe
+						src={url ?? "about:blank"}
+						className="h-full w-full border-none"
+						title="Project Preview"
 					/>
-				) : (
-					<Card className="h-full w-full overflow-hidden">
-						<iframe
-							src={url ?? "about:blank"}
-							className="h-full w-full border-none"
-							title="Project Preview"
-						/>
-					</Card>
-				)}
-			</div>
+				</Card>
+			)}
 		</div>
 	);
 }

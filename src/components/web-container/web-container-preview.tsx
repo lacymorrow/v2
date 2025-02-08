@@ -148,24 +148,18 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 	if (error) {
 		return (
-			<div className="flex h-full items-center justify-center">
-				<div className="text-center">
-					<p className="mb-4 text-destructive">{error}</p>
-					<Button onClick={initWebContainer}>Retry</Button>
-				</div>
+			<div className="text-center">
+				<p className="mb-4 text-destructive">{error}</p>
+				<Button onClick={initWebContainer}>Retry</Button>
 			</div>
 		);
 	}
 
 	if (isLoading) {
 		return (
-			<div className="flex h-full items-center justify-center">
-				<div className="text-center">
-					<Loader2 className="mb-4 h-6 w-6 animate-spin" />
-					<p className="text-muted-foreground">
-						Starting development server...
-					</p>
-				</div>
+			<div className="text-center">
+				<Loader2 className="mb-4 h-6 w-6 animate-spin" />
+				<p className="text-muted-foreground">Starting development server...</p>
 			</div>
 		);
 	}
@@ -173,7 +167,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 	return (
 		<div className="relative h-full w-full">
 			{/* Debug Panel */}
-			<div className="absolute left-4 top-4 z-10 rounded-md bg-background/80 p-4 shadow-sm backdrop-blur">
+			<div className="">
 				<div className="space-y-2 text-sm">
 					<p>Status: {iframeLoading ? "Loading Preview" : "Ready"}</p>
 					<p>Server URL: {serverUrl || "Not started"}</p>
@@ -198,7 +192,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 			</div>
 
 			{iframeLoading && serverUrl && (
-				<div className="absolute inset-0 flex items-center justify-center bg-background">
+				<div className="">
 					<div className="text-center">
 						<Loader2 className="mb-4 h-6 w-6 animate-spin" />
 						<p className="text-muted-foreground">
