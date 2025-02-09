@@ -6,6 +6,18 @@ import { defineConfig } from "vite"
 export default defineConfig({
 	plugins: [react()],
 	base: './', // Makes assets load correctly when deployed to subdirectories
+	server: {
+		hmr: {
+			overlay: true,
+			clientPort: 443,
+			protocol: 'wss',
+		},
+		watch: {
+			usePolling: true,
+			interval: 1000,
+		},
+		host: '0.0.0.0',
+	},
 	build: {
 		outDir: 'dist',
 		emptyOutDir: true,
