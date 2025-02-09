@@ -20,6 +20,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { LayoutToggle } from "@/components/layout-toggle";
+import { WebContainerPreview } from "@/components/web-container-preview";
 
 export default function HomePage() {
 	const {
@@ -35,7 +36,9 @@ export default function HomePage() {
 		reset,
 	} = useProjectStore();
 	const [isChatCollapsed, setIsChatCollapsed] = useState(false);
-	const [activeTab, setActiveTab] = useState<"code" | "preview">("preview");
+	const [activeTab, setActiveTab] = useState<
+		"code" | "preview" | "webcontainer"
+	>("webcontainer");
 	const [showFileTree, setShowFileTree] = useState(true);
 	const [showChat, setShowChat] = useState(true);
 	const [showPreview, setShowPreview] = useState(true);
@@ -128,11 +131,33 @@ export default function HomePage() {
 							</>
 						)}
 						<ResizablePanel defaultSize={showPreview ? 65 : 80}>
-							{showPreview ? (
-								<Preview url={projectUrl} />
-							) : (
-								<CodeEditor path={selectedFile} content={fileContent} />
-							)}
+							<div className="flex h-full flex-col">
+								<div className="border-b px-2">
+									<Tabs
+										value={activeTab}
+										onValueChange={(value) =>
+											setActiveTab(value as typeof activeTab)
+										}
+									>
+										<TabsList>
+											<TabsTrigger value="preview">Static Preview</TabsTrigger>
+											<TabsTrigger value="webcontainer">
+												Dev Preview
+											</TabsTrigger>
+											<TabsTrigger value="code">Code</TabsTrigger>
+										</TabsList>
+									</Tabs>
+								</div>
+								<div className="flex-1">
+									{activeTab === "preview" && <Preview url={projectUrl} />}
+									{activeTab === "webcontainer" && (
+										<WebContainerPreview projectName={projectName} />
+									)}
+									{activeTab === "code" && (
+										<CodeEditor path={selectedFile} content={fileContent} />
+									)}
+								</div>
+							</div>
 						</ResizablePanel>
 						{showChat && (
 							<>
