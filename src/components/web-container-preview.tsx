@@ -114,15 +114,8 @@ class WebContainerManager {
 	private mountedFiles: Record<string, FileSystemEntry> | null = null;
 
 	private constructor() {
-		// Try to restore mounted files from sessionStorage
-		const storedFiles = sessionStorage.getItem("webcontainer-files");
-		if (storedFiles) {
-			try {
-				this.mountedFiles = JSON.parse(storedFiles);
-			} catch (error) {
-				console.error("Failed to restore mounted files:", error);
-			}
-		}
+		// Don't try to access sessionStorage during construction
+		// We'll load the files when needed instead
 	}
 
 	static getInstance(): WebContainerManager {
@@ -130,6 +123,20 @@ class WebContainerManager {
 			WebContainerManager.instance = new WebContainerManager();
 		}
 		return WebContainerManager.instance;
+	}
+
+	async loadStoredFiles() {
+		// Only try to load files from sessionStorage on the client side
+		if (typeof window !== "undefined") {
+			const storedFiles = sessionStorage.getItem("webcontainer-files");
+			if (storedFiles) {
+				try {
+					this.mountedFiles = JSON.parse(storedFiles);
+				} catch (error) {
+					console.error("Failed to restore mounted files:", error);
+				}
+			}
+		}
 	}
 
 	async getContainer(): Promise<WebContainer> {
@@ -146,6 +153,8 @@ class WebContainerManager {
 		// Start the boot process
 		try {
 			this.isBooting = true;
+			// Load any stored files before booting
+			await this.loadStoredFiles();
 			this.bootPromise = WebContainer.boot();
 			this.container = await this.bootPromise;
 
@@ -169,9 +178,11 @@ class WebContainerManager {
 	async mount(files: Record<string, FileSystemEntry>) {
 		const instance = await this.getContainer();
 		await instance.mount(files);
-		// Store files in sessionStorage
-		this.mountedFiles = files;
-		sessionStorage.setItem("webcontainer-files", JSON.stringify(files));
+		// Store files in sessionStorage only on client side
+		if (typeof window !== "undefined") {
+			this.mountedFiles = files;
+			sessionStorage.setItem("webcontainer-files", JSON.stringify(files));
+		}
 	}
 
 	async teardown() {
@@ -184,7 +195,9 @@ class WebContainerManager {
 				this.container = null;
 				this.bootPromise = null;
 				this.mountedFiles = null;
-				sessionStorage.removeItem("webcontainer-files");
+				if (typeof window !== "undefined") {
+					sessionStorage.removeItem("webcontainer-files");
+				}
 			}
 		}
 	}
@@ -204,7 +217,11 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 	// Initialize from sessionStorage on mount
 	useEffect(() => {
-		const stored = sessionStorage.getItem(`webcontainer-url-${projectName}`);
+		// Only try to access sessionStorage after component mount
+		const stored =
+			typeof window !== "undefined"
+				? sessionStorage.getItem(`webcontainer-url-${projectName}`)
+				: null;
 		if (stored) {
 			setServerUrl(stored);
 			setIsLoading(false);
@@ -214,20 +231,38 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 	// Only cleanup on component unmount if navigating away
 	useEffect(() => {
-		const handleBeforeUnload = () => {
+		// We want to distinguish between page refresh and actual navigation
+		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+			// Check if this is a refresh (reload button or F5)
+			const isRefresh = performance.navigation?.type === 1;
+			if (isRefresh) {
+				return;
+			}
 			containerManager.current.teardown();
 			sessionStorage.removeItem(`webcontainer-url-${projectName}`);
 		};
 
+		// Handle actual navigation away
+		const handleUnload = () => {
+			// Check if this is a refresh (reload button or F5)
+			const isRefresh = performance.navigation?.type === 1;
+			if (!isRefresh) {
+				containerManager.current.teardown();
+				sessionStorage.removeItem(`webcontainer-url-${projectName}`);
+			}
+		};
+
 		window.addEventListener("beforeunload", handleBeforeUnload);
+		window.addEventListener("unload", handleUnload);
 		return () => {
 			window.removeEventListener("beforeunload", handleBeforeUnload);
+			window.removeEventListener("unload", handleUnload);
 		};
 	}, [projectName]);
 
 	// Effect to update iframe src when serverUrl changes
 	useEffect(() => {
-		if (serverUrl && iframeRef.current) {
+		if (serverUrl && iframeRef.current && typeof window !== "undefined") {
 			console.log("Updating iframe src to:", serverUrl);
 			setIsIframeLoading(true);
 			iframeRef.current.src = serverUrl;
