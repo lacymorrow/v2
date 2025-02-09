@@ -58,10 +58,11 @@ async function readDirRecursive(dir: string, projectRoot: string): Promise<FileS
 
 export async function GET(
 	request: NextRequest,
-	{ params }: { params: { name: string } },
+	{ params }: { params: Promise<{ name: string }> },
 ) {
+	const name = (await params).name;
 	try {
-		const projectPath = path.join(APP_STORAGE_PATH, params.name);
+		const projectPath = path.join(APP_STORAGE_PATH, name);
 
 		// Check if the project directory exists
 		try {

@@ -131,33 +131,43 @@ export default function HomePage() {
 							</>
 						)}
 						<ResizablePanel defaultSize={showPreview ? 65 : 80}>
-							<div className="flex h-full flex-col">
-								<div className="border-b px-2">
-									<Tabs
-										value={activeTab}
-										onValueChange={(value) =>
-											setActiveTab(value as typeof activeTab)
-										}
-									>
-										<TabsList>
-											<TabsTrigger value="preview">Static Preview</TabsTrigger>
-											<TabsTrigger value="webcontainer">
-												Dev Preview
-											</TabsTrigger>
-											<TabsTrigger value="code">Code</TabsTrigger>
-										</TabsList>
-									</Tabs>
-								</div>
-								<div className="flex-1">
-									{activeTab === "preview" && <Preview url={projectUrl} />}
-									{activeTab === "webcontainer" && (
-										<WebContainerPreview projectName={projectName} />
+							<Tabs
+								value={activeTab}
+								onValueChange={(value) =>
+									setActiveTab(value as typeof activeTab)
+								}
+								className="h-full"
+							>
+								<TabsList>
+									<TabsTrigger value="preview">Static Preview</TabsTrigger>
+									<TabsTrigger value="webcontainer">Dev Preview</TabsTrigger>
+									<TabsTrigger value="code">Code</TabsTrigger>
+								</TabsList>
+								<TabsContent
+									value="preview"
+									forceMount
+									className={cn("h-full", activeTab !== "preview" && "hidden")}
+								>
+									<Preview url={projectUrl} />
+								</TabsContent>
+								<TabsContent
+									value="webcontainer"
+									forceMount
+									className={cn(
+										"h-full",
+										activeTab !== "webcontainer" && "hidden",
 									)}
-									{activeTab === "code" && (
-										<CodeEditor path={selectedFile} content={fileContent} />
-									)}
-								</div>
-							</div>
+								>
+									<WebContainerPreview projectName={projectName} />
+								</TabsContent>
+								<TabsContent
+									value="code"
+									forceMount
+									className={cn("h-full", activeTab !== "code" && "hidden")}
+								>
+									<CodeEditor path={selectedFile} content={fileContent} />
+								</TabsContent>
+							</Tabs>
 						</ResizablePanel>
 						{showChat && (
 							<>

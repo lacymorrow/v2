@@ -10,6 +10,18 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Loader2, RefreshCcw } from "lucide-react";
+import Convert from "ansi-to-html";
+
+const convert = new Convert();
+
+function AnsiOutput({ text }: { text: string }) {
+	return (
+		<div
+			className="whitespace-pre-wrap font-mono"
+			dangerouslySetInnerHTML={{ __html: convert.toHtml(text) }}
+		/>
+	);
+}
 
 interface WebContainerPreviewProps {
 	projectName?: string | null;
@@ -450,7 +462,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 								<Loader2 className="h-6 w-6 animate-spin" />
 							)}
 							<span className="mt-2 text-center">
-								{status.message}
+								<AnsiOutput text={status.message} />
 								{status.error && (
 									<div className="mt-2 max-w-md text-sm text-red-500">
 										{status.error}
