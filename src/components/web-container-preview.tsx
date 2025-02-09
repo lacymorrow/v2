@@ -114,8 +114,15 @@ class WebContainerManager {
 	private mountedFiles: Record<string, FileSystemEntry> | null = null;
 
 	private constructor() {
-		// Don't try to access sessionStorage during construction
-		// We'll load the files when needed instead
+		// Try to restore state on initialization
+		window.addEventListener("beforeunload", () => {
+			if (this.mountedFiles) {
+				sessionStorage.setItem(
+					"webcontainer-files",
+					JSON.stringify(this.mountedFiles),
+				);
+			}
+		});
 	}
 
 	static getInstance(): WebContainerManager {
@@ -125,18 +132,19 @@ class WebContainerManager {
 		return WebContainerManager.instance;
 	}
 
-	async loadStoredFiles() {
-		// Only try to load files from sessionStorage on the client side
-		if (typeof window !== "undefined") {
-			const storedFiles = sessionStorage.getItem("webcontainer-files");
-			if (storedFiles) {
-				try {
-					this.mountedFiles = JSON.parse(storedFiles);
-				} catch (error) {
-					console.error("Failed to restore mounted files:", error);
-				}
-			}
+	setMountedFiles(files: Record<string, FileSystemEntry>) {
+		this.mountedFiles = files;
+	}
+
+	getMountedFiles(): Record<string, FileSystemEntry> | null {
+		if (this.mountedFiles) return this.mountedFiles;
+
+		const stored = sessionStorage.getItem("webcontainer-files");
+		if (stored) {
+			this.mountedFiles = JSON.parse(stored);
+			return this.mountedFiles;
 		}
+		return null;
 	}
 
 	async getContainer(): Promise<WebContainer> {
@@ -153,14 +161,13 @@ class WebContainerManager {
 		// Start the boot process
 		try {
 			this.isBooting = true;
-			// Load any stored files before booting
-			await this.loadStoredFiles();
 			this.bootPromise = WebContainer.boot();
 			this.container = await this.bootPromise;
 
 			// If we have stored files, remount them
-			if (this.mountedFiles) {
-				await this.container.mount(this.mountedFiles);
+			const files = this.getMountedFiles();
+			if (files) {
+				await this.container.mount(files);
 			}
 
 			return this.container;
@@ -175,16 +182,6 @@ class WebContainerManager {
 		}
 	}
 
-	async mount(files: Record<string, FileSystemEntry>) {
-		const instance = await this.getContainer();
-		await instance.mount(files);
-		// Store files in sessionStorage only on client side
-		if (typeof window !== "undefined") {
-			this.mountedFiles = files;
-			sessionStorage.setItem("webcontainer-files", JSON.stringify(files));
-		}
-	}
-
 	async teardown() {
 		if (this.container) {
 			try {
@@ -195,9 +192,7 @@ class WebContainerManager {
 				this.container = null;
 				this.bootPromise = null;
 				this.mountedFiles = null;
-				if (typeof window !== "undefined") {
-					sessionStorage.removeItem("webcontainer-files");
-				}
+				sessionStorage.removeItem("webcontainer-files");
 			}
 		}
 	}
@@ -217,11 +212,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 	// Initialize from sessionStorage on mount
 	useEffect(() => {
-		// Only try to access sessionStorage after component mount
-		const stored =
-			typeof window !== "undefined"
-				? sessionStorage.getItem(`webcontainer-url-${projectName}`)
-				: null;
+		const stored = sessionStorage.getItem(`webcontainer-url-${projectName}`);
 		if (stored) {
 			setServerUrl(stored);
 			setIsLoading(false);
@@ -231,38 +222,20 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 	// Only cleanup on component unmount if navigating away
 	useEffect(() => {
-		// We want to distinguish between page refresh and actual navigation
-		const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-			// Check if this is a refresh (reload button or F5)
-			const isRefresh = performance.navigation?.type === 1;
-			if (isRefresh) {
-				return;
-			}
+		const handleBeforeUnload = () => {
 			containerManager.current.teardown();
 			sessionStorage.removeItem(`webcontainer-url-${projectName}`);
 		};
 
-		// Handle actual navigation away
-		const handleUnload = () => {
-			// Check if this is a refresh (reload button or F5)
-			const isRefresh = performance.navigation?.type === 1;
-			if (!isRefresh) {
-				containerManager.current.teardown();
-				sessionStorage.removeItem(`webcontainer-url-${projectName}`);
-			}
-		};
-
 		window.addEventListener("beforeunload", handleBeforeUnload);
-		window.addEventListener("unload", handleUnload);
 		return () => {
 			window.removeEventListener("beforeunload", handleBeforeUnload);
-			window.removeEventListener("unload", handleUnload);
 		};
 	}, [projectName]);
 
 	// Effect to update iframe src when serverUrl changes
 	useEffect(() => {
-		if (serverUrl && iframeRef.current && typeof window !== "undefined") {
+		if (serverUrl && iframeRef.current) {
 			console.log("Updating iframe src to:", serverUrl);
 			setIsIframeLoading(true);
 			iframeRef.current.src = serverUrl;
@@ -378,7 +351,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 				setStatus({ message: "Mounting project files..." });
 				try {
 					console.log("Files to be mounted:", JSON.stringify(files, null, 2));
-					await containerManager.current.mount(files);
+					await instance.mount(files);
 
 					// Store initial file contents for change detection
 					async function storeInitialContent(
@@ -412,6 +385,9 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 					} catch (error) {
 						console.error("Error reading main.tsx:", error);
 					}
+
+					// Update mounted files
+					containerManager.current.setMountedFiles(files);
 				} catch (error) {
 					console.error("Mount error:", error);
 					throw new Error(
@@ -703,11 +679,11 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 					{/* Loading layer */}
 					{(isLoading || isIframeLoading || !serverUrl || status.error) && (
-						<div className="z-10 flex flex-col items-center justify-center bg-background/10 backdrop-blur-sm [grid-area:stack]">
+						<div className="z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm [grid-area:stack]">
 							{(isLoading || isIframeLoading) && (
 								<Loader2 className="h-6 w-6 animate-spin" />
 							)}
-							<div className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap text-center font-mono text-primary">
+							<div className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap text-center font-mono dark:text-white">
 								<div
 									dangerouslySetInnerHTML={convertAnsiToHtml(status.message)}
 								/>
