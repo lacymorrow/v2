@@ -20,7 +20,10 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { LayoutToggle } from "@/components/layout-toggle";
-import { WebContainerPreview } from "@/components/web-container-preview";
+import { WebContainerPreview } from "@/components/dynamic-web-container";
+
+// Prevent static generation
+export const dynamic = "force-dynamic";
 
 export default function HomePage() {
 	const {
@@ -118,6 +121,7 @@ export default function HomePage() {
 				<div className="h-full overflow-hidden rounded-lg border bg-card">
 					<ResizablePanelGroup
 						direction={isDesktop ? "horizontal" : "vertical"}
+						className="h-full"
 					>
 						{showFileTree && (
 							<>
