@@ -9,19 +9,77 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, RefreshCcw } from "lucide-react";
+import { Loader2, RefreshCcw, Hammer } from "lucide-react";
 import Convert from "ansi-to-html";
 
-const convert = new Convert();
-
-function AnsiOutput({ text }: { text: string }) {
+// Create two converters for light and dark modes with appropriate colors
+const stripControlSequences = (text: string) => {
 	return (
-		<div
-			className="whitespace-pre-wrap font-mono"
-			dangerouslySetInnerHTML={{ __html: convert.toHtml(text) }}
-		/>
+		text
+			// Remove cursor hide/show
+			.replace(/\[\?25[hl]/g, "")
+			// Remove cursor movement
+			.replace(/\[\d*[ABCDEFGJKST]/g, "")
+			// Remove screen clear
+			.replace(/\[\d*[JKsu]/g, "")
+			// Remove terminal title sequences
+			.replace(/\]0;[^\a\u001b]*(?:\a|\u001b\\)/g, "")
+			// Remove other common control sequences
+			.replace(/\[\d*[^A-Za-z\d\[\];]/g, "")
 	);
-}
+};
+
+const lightConverter = new Convert({
+	fg: "#000",
+	bg: "#fff",
+	newline: true,
+	escapeXML: true,
+	stream: false,
+	colors: {
+		0: "#000000", // Black
+		1: "#E34234", // Red
+		2: "#107C10", // Green
+		3: "#825A00", // Yellow
+		4: "#0063B1", // Blue
+		5: "#881798", // Magenta
+		6: "#007A7C", // Cyan
+		7: "#6E6E6E", // Light gray
+		8: "#767676", // Dark gray
+		9: "#E81123", // Bright red
+		10: "#16C60C", // Bright green
+		11: "#B7410E", // Bright yellow
+		12: "#0037DA", // Bright blue
+		13: "#B4009E", // Bright magenta
+		14: "#00B7C3", // Bright cyan
+		15: "#000000", // Bright white
+	},
+});
+
+const darkConverter = new Convert({
+	fg: "#fff",
+	bg: "#000",
+	newline: true,
+	escapeXML: true,
+	stream: false,
+	colors: {
+		0: "#FFFFFF", // White
+		1: "#FF5555", // Red
+		2: "#50FA7B", // Green
+		3: "#F1FA8C", // Yellow
+		4: "#6272A4", // Blue
+		5: "#FF79C6", // Magenta
+		6: "#8BE9FD", // Cyan
+		7: "#F8F8F2", // Light gray
+		8: "#6272A4", // Dark gray
+		9: "#FF6E6E", // Bright red
+		10: "#69FF94", // Bright green
+		11: "#FFFFA5", // Bright yellow
+		12: "#D6ACFF", // Bright blue
+		13: "#FF92DF", // Bright magenta
+		14: "#A4FFFF", // Bright cyan
+		15: "#FFFFFF", // Bright white
+	},
+});
 
 interface WebContainerPreviewProps {
 	projectName?: string | null;
@@ -30,6 +88,7 @@ interface WebContainerPreviewProps {
 type Status = {
 	message: string;
 	error?: string;
+	isHtml?: boolean;
 };
 
 interface FileEntry {
@@ -51,8 +110,20 @@ class WebContainerManager {
 	private static instance: WebContainerManager | null = null;
 	private container: WebContainer | null = null;
 	private isBooting = false;
+	private bootPromise: Promise<WebContainer> | null = null;
+	private mountedFiles: Record<string, FileSystemEntry> | null = null;
 
-	private constructor() {}
+	private constructor() {
+		// Try to restore mounted files from sessionStorage
+		const storedFiles = sessionStorage.getItem("webcontainer-files");
+		if (storedFiles) {
+			try {
+				this.mountedFiles = JSON.parse(storedFiles);
+			} catch (error) {
+				console.error("Failed to restore mounted files:", error);
+			}
+		}
+	}
 
 	static getInstance(): WebContainerManager {
 		if (!WebContainerManager.instance) {
@@ -62,27 +133,59 @@ class WebContainerManager {
 	}
 
 	async getContainer(): Promise<WebContainer> {
+		// If we already have a container, return it
 		if (this.container) {
 			return this.container;
 		}
 
-		if (this.isBooting) {
-			throw new Error("WebContainer is already booting");
+		// If we're already booting, return the existing boot promise
+		if (this.bootPromise) {
+			return this.bootPromise;
 		}
 
+		// Start the boot process
 		try {
 			this.isBooting = true;
-			this.container = await WebContainer.boot();
+			this.bootPromise = WebContainer.boot();
+			this.container = await this.bootPromise;
+
+			// If we have stored files, remount them
+			if (this.mountedFiles) {
+				await this.container.mount(this.mountedFiles);
+			}
+
 			return this.container;
+		} catch (error) {
+			// Clear state on error
+			this.container = null;
+			this.bootPromise = null;
+			throw error;
 		} finally {
 			this.isBooting = false;
+			this.bootPromise = null;
 		}
+	}
+
+	async mount(files: Record<string, FileSystemEntry>) {
+		const instance = await this.getContainer();
+		await instance.mount(files);
+		// Store files in sessionStorage
+		this.mountedFiles = files;
+		sessionStorage.setItem("webcontainer-files", JSON.stringify(files));
 	}
 
 	async teardown() {
 		if (this.container) {
-			await this.container.teardown();
-			this.container = null;
+			try {
+				await this.container.teardown();
+			} catch (error) {
+				console.error("Error during teardown:", error);
+			} finally {
+				this.container = null;
+				this.bootPromise = null;
+				this.mountedFiles = null;
+				sessionStorage.removeItem("webcontainer-files");
+			}
 		}
 	}
 }
@@ -97,6 +200,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 	const containerManager = useRef(WebContainerManager.getInstance());
 	const isInitialMount = useRef(true);
 	const lastFileContent = useRef<Record<string, string>>({});
+	const [isRebuilding, setIsRebuilding] = useState(false);
 
 	// Initialize from sessionStorage on mount
 	useEffect(() => {
@@ -239,7 +343,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 				setStatus({ message: "Mounting project files..." });
 				try {
 					console.log("Files to be mounted:", JSON.stringify(files, null, 2));
-					await instance.mount(files);
+					await containerManager.current.mount(files);
 
 					// Store initial file contents for change detection
 					async function storeInitialContent(
@@ -314,7 +418,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 					new WritableStream({
 						write(data) {
 							console.log("Install output:", data);
-							setStatus({ message: `Installing dependencies...\n${data}` });
+							setStatus({ message: data });
 						},
 					}),
 				);
@@ -336,7 +440,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 					new WritableStream({
 						write(data) {
 							console.log("Server output:", data);
-							setStatus({ message: `Starting development server...\n${data}` });
+							setStatus({ message: data });
 						},
 					}),
 				);
@@ -385,31 +489,123 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 			setStatus({ message: "Restarting development server..." });
 
 			// Restart the dev server
-			const devProcess = await instance.spawn("pnpm", ["run", "dev"]);
+			const devProcess = await instance.spawn("pnpm", ["run", "dev", "--host"]);
 
-			// Listen for dev server output
-			const reader = devProcess.output.getReader();
-			try {
-				while (true) {
-					const { done, value } = await reader.read();
-					if (done) break;
-					console.log("Dev server output:", value);
+			// Stream server output
+			devProcess.output.pipeTo(
+				new WritableStream({
+					write(data) {
+						console.log("Dev server output:", data);
+						setStatus({ message: data });
+					},
+				}),
+			);
+
+			// Wait for server to be ready
+			instance.on("server-ready", (port, url) => {
+				console.log("Server ready:", port, url);
+				const iframeUrl = url.replace("localhost", "0.0.0.0");
+				setServerUrl(iframeUrl);
+				setIsRefreshing(false);
+				setStatus({ message: "Server ready!" });
+			});
+
+			// Handle server exit
+			devProcess.exit.then((code) => {
+				if (code !== 0) {
+					setStatus({ message: "Server crashed" });
 				}
-			} finally {
-				reader.releaseLock();
-			}
-
-			setStatus({ message: "Development server is running" });
+				setIsRefreshing(false);
+			});
 		} catch (error) {
 			console.error("Failed to refresh:", error);
 			setStatus({
 				message: "Failed to restart development server",
 				error: error instanceof Error ? error.message : "Unknown error",
 			});
-		} finally {
 			setIsRefreshing(false);
 		}
 	}
+
+	async function handleRebuild() {
+		try {
+			const instance = await containerManager.current.getContainer();
+			setIsRebuilding(true);
+			setStatus({ message: "Rebuilding project..." });
+
+			// Clean install
+			const cleanProcess = await instance.spawn("pnpm", ["clean"]);
+			await cleanProcess.exit;
+
+			// Reinstall dependencies
+			const installProcess = await instance.spawn("pnpm", ["install"]);
+
+			// Stream install output
+			installProcess.output.pipeTo(
+				new WritableStream({
+					write(data) {
+						console.log("Install output:", data);
+						setStatus({ message: data });
+					},
+				}),
+			);
+
+			const installExitCode = await installProcess.exit;
+			if (installExitCode !== 0) {
+				throw new Error("Installation failed");
+			}
+
+			// Start dev server
+			const devProcess = await instance.spawn("pnpm", ["run", "dev", "--host"]);
+
+			// Stream server output
+			devProcess.output.pipeTo(
+				new WritableStream({
+					write(data) {
+						console.log("Server output:", data);
+						setStatus({ message: data });
+					},
+				}),
+			);
+
+			// Wait for server to be ready
+			instance.on("server-ready", (port, url) => {
+				console.log("Server ready:", port, url);
+				const iframeUrl = url.replace("localhost", "0.0.0.0");
+				setServerUrl(iframeUrl);
+				setIsRebuilding(false);
+				setStatus({ message: "Server ready!" });
+			});
+
+			// Handle server exit
+			devProcess.exit.then((code) => {
+				if (code !== 0) {
+					setStatus({ message: "Server crashed" });
+				}
+				setIsRebuilding(false);
+			});
+		} catch (error) {
+			console.error("Failed to rebuild:", error);
+			setStatus({
+				message: "Failed to rebuild project",
+				error: error instanceof Error ? error.message : "Unknown error",
+			});
+			setIsRebuilding(false);
+		}
+	}
+
+	// Helper function to convert ANSI to HTML
+	const convertAnsiToHtml = (text: string) => {
+		try {
+			const cleanText = stripControlSequences(text);
+			const html = `<div class="dark:hidden">${lightConverter.toHtml(cleanText)}</div>
+			             <div class="hidden dark:block">${darkConverter.toHtml(cleanText)}</div>`;
+			return { __html: html };
+		} catch (error) {
+			console.error("Error converting ANSI to HTML:", error);
+			return { __html: text };
+		}
+	};
 
 	if (!projectName) {
 		return (
@@ -422,25 +618,40 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 	return (
 		<div className="relative h-full">
 			<div className="absolute right-4 top-4 z-10 flex gap-2">
-				<TooltipProvider>
-					<Tooltip>
-						<TooltipTrigger asChild>
-							<Button
-								size="icon"
-								variant="outline"
-								onClick={handleRefresh}
-								disabled={isLoading || isRefreshing}
-							>
-								{isRefreshing ? (
-									<Loader2 className="h-4 w-4 animate-spin" />
-								) : (
-									<RefreshCcw className="h-4 w-4" />
-								)}
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>Restart dev server</TooltipContent>
-					</Tooltip>
-				</TooltipProvider>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							size="icon"
+							variant="outline"
+							onClick={handleRebuild}
+							disabled={isLoading || isRefreshing || isRebuilding}
+						>
+							{isRebuilding ? (
+								<Loader2 className="h-4 w-4 animate-spin" />
+							) : (
+								<Hammer className="h-4 w-4" />
+							)}
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Rebuild project</TooltipContent>
+				</Tooltip>
+				<Tooltip>
+					<TooltipTrigger asChild>
+						<Button
+							size="icon"
+							variant="outline"
+							onClick={handleRefresh}
+							disabled={isLoading || isRefreshing || isRebuilding}
+						>
+							{isRefreshing ? (
+								<Loader2 className="h-4 w-4 animate-spin" />
+							) : (
+								<RefreshCcw className="h-4 w-4" />
+							)}
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent>Restart dev server</TooltipContent>
+				</Tooltip>
 			</div>
 
 			<div className="relative h-full overflow-hidden border-l">
@@ -457,18 +668,20 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 					{/* Loading layer */}
 					{(isLoading || isIframeLoading || !serverUrl || status.error) && (
-						<div className="z-10 flex flex-col items-center justify-center bg-background/80 backdrop-blur-sm [grid-area:stack]">
+						<div className="z-10 flex flex-col items-center justify-center bg-background/10 backdrop-blur-sm [grid-area:stack]">
 							{(isLoading || isIframeLoading) && (
 								<Loader2 className="h-6 w-6 animate-spin" />
 							)}
-							<span className="mt-2 text-center">
-								<AnsiOutput text={status.message} />
+							<div className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap text-center font-mono text-primary">
+								<div
+									dangerouslySetInnerHTML={convertAnsiToHtml(status.message)}
+								/>
 								{status.error && (
-									<div className="mt-2 max-w-md text-sm text-red-500">
+									<div className="mt-2 max-w-md text-sm text-red-500 dark:text-red-400">
 										{status.error}
 									</div>
 								)}
-							</span>
+							</div>
 						</div>
 					)}
 				</div>
