@@ -1,5 +1,5 @@
 {
-	"name": "ship-kit",
+	"name": "vite0",
 	"version": "0.1.1",
 	"private": true,
 	"type": "module",
@@ -356,9 +356,6 @@
 		"*.{json,md,yml}": [
 			"prettier --write"
 		]
-	},
-	"volta": {
-		"node": "22.11.0"
 	},
 	"pnpm": {
 		"overrides": {
