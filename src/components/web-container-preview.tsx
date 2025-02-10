@@ -112,40 +112,10 @@ class WebContainerManager {
 	private isBooting = false;
 	private bootPromise: Promise<WebContainer> | null = null;
 	private mountedFiles: Record<string, FileSystemEntry> | null = null;
-	private nodeModulesCache: Map<string, Record<string, FileSystemEntry>> =
-		new Map();
-
-	// Essential packages to cache
-	private essentialPackages = new Set([
-		"vite",
-		"@vitejs/plugin-react",
-		"react",
-		"react-dom",
-		"@types/react",
-		"@types/react-dom",
-	]);
 
 	private constructor() {
 		// Only add event listener if window is defined
 		if (typeof window !== "undefined") {
-			// Register service worker
-			if ("serviceWorker" in navigator) {
-				window.addEventListener("load", () => {
-					navigator.serviceWorker
-						.register("/service-worker.js")
-						.then((registration) => {
-							console.log(
-								"ServiceWorker registration successful:",
-								registration.scope,
-							);
-						})
-						.catch((error) => {
-							console.error("ServiceWorker registration failed:", error);
-						});
-				});
-			}
-
-			// Save caches on unload
 			window.addEventListener("beforeunload", () => {
 				if (this.mountedFiles) {
 					sessionStorage.setItem(
@@ -153,35 +123,7 @@ class WebContainerManager {
 						JSON.stringify(this.mountedFiles),
 					);
 				}
-				// Save each package cache separately
-				for (const [pkg, cache] of this.nodeModulesCache.entries()) {
-					try {
-						const cacheString = JSON.stringify(cache);
-						if (cacheString.length < 2000000) {
-							// 2MB limit per package
-							sessionStorage.setItem(
-								`webcontainer-node-modules-${pkg}`,
-								cacheString,
-							);
-						}
-					} catch (error) {
-						console.warn(`Failed to cache package ${pkg}:`, error);
-					}
-				}
 			});
-
-			// Try to restore caches
-			for (const key of Object.keys(sessionStorage)) {
-				if (key.startsWith("webcontainer-node-modules-")) {
-					const pkg = key.replace("webcontainer-node-modules-", "");
-					try {
-						const cache = JSON.parse(sessionStorage.getItem(key) || "");
-						this.nodeModulesCache.set(pkg, cache);
-					} catch (error) {
-						console.error(`Failed to restore cache for ${pkg}:`, error);
-					}
-				}
-			}
 		}
 	}
 
@@ -258,135 +200,6 @@ class WebContainerManager {
 				this.bootPromise = null;
 				this.mountedFiles = null;
 				sessionStorage.removeItem("webcontainer-files");
-			}
-		}
-	}
-
-	// Cache node_modules after successful installation
-	async cacheNodeModules(instance: WebContainer) {
-		try {
-			const nodeModulesPath = "/node_modules";
-			const entries = await instance.fs.readdir(nodeModulesPath, {
-				withFileTypes: true,
-			});
-
-			// Clear existing cache
-			this.nodeModulesCache.clear();
-
-			// Process each package directory
-			for (const entry of entries) {
-				if (!entry.isDirectory()) continue;
-
-				// Only cache essential packages
-				const pkgName = entry.name.startsWith("@")
-					? `${entry.name}/${(await instance.fs.readdir(`${nodeModulesPath}/${entry.name}`))[0]}`
-					: entry.name;
-
-				if (!this.essentialPackages.has(pkgName)) continue;
-
-				try {
-					const packageContents = await this.readDirectoryRecursive(
-						instance,
-						`${nodeModulesPath}/${entry.name}`,
-					);
-					if (packageContents) {
-						this.nodeModulesCache.set(entry.name, packageContents);
-						console.log(`Successfully cached ${entry.name}`);
-					}
-				} catch (error) {
-					console.warn(`Failed to cache ${entry.name}:`, error);
-				}
-			}
-		} catch (error) {
-			console.error("Failed to cache node_modules:", error);
-		}
-	}
-
-	// Helper method to read directory recursively
-	private async readDirectoryRecursive(
-		instance: WebContainer,
-		path: string,
-	): Promise<Record<string, FileSystemEntry> | null> {
-		try {
-			const entries = await instance.fs.readdir(path, { withFileTypes: true });
-			const result: Record<string, FileSystemEntry> = {};
-
-			for (const entry of entries) {
-				const fullPath = `${path}/${entry.name}`;
-				if (entry.isDirectory()) {
-					const subEntries = await this.readDirectoryRecursive(
-						instance,
-						fullPath,
-					);
-					if (subEntries) {
-						result[entry.name] = {
-							kind: "directory",
-							directory: subEntries,
-						};
-					}
-				} else if (entry.isFile()) {
-					const contents = await instance.fs.readFile(fullPath, "utf-8");
-					result[entry.name] = {
-						kind: "file",
-						file: {
-							contents,
-						},
-					};
-				}
-			}
-
-			return result;
-		} catch (error) {
-			console.error(`Error reading directory ${path}:`, error);
-			return null;
-		}
-	}
-
-	// Restore cached node_modules
-	async restoreNodeModules(instance: WebContainer): Promise<boolean> {
-		if (this.nodeModulesCache.size === 0) {
-			console.log("No cached node_modules found");
-			return false;
-		}
-
-		try {
-			await instance.fs.mkdir("/node_modules", { recursive: true });
-
-			// Restore each package
-			for (const [pkg, contents] of this.nodeModulesCache.entries()) {
-				try {
-					await this.writeDirectoryRecursive(
-						instance,
-						`/node_modules/${pkg}`,
-						contents,
-					);
-					console.log(`Successfully restored ${pkg}`);
-				} catch (error) {
-					console.warn(`Failed to restore ${pkg}:`, error);
-				}
-			}
-
-			return true;
-		} catch (error) {
-			console.error("Failed to restore node_modules:", error);
-			this.nodeModulesCache.clear();
-			return false;
-		}
-	}
-
-	// Helper method to write directory recursively
-	private async writeDirectoryRecursive(
-		instance: WebContainer,
-		basePath: string,
-		entries: Record<string, FileSystemEntry>,
-	) {
-		for (const [name, entry] of Object.entries(entries)) {
-			const fullPath = `${basePath}/${name}`;
-			if (entry.kind === "directory") {
-				await instance.fs.mkdir(fullPath, { recursive: true });
-				await this.writeDirectoryRecursive(instance, fullPath, entry.directory);
-			} else if (entry.kind === "file") {
-				await instance.fs.writeFile(fullPath, entry.file.contents);
 			}
 		}
 	}
@@ -666,56 +479,45 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 				// Install dependencies
 				setStatus({ message: "Installing dependencies..." });
 
-				// Try to restore cached node_modules first
-				const hasRestoredCache =
-					await containerManager.current.restoreNodeModules(instance);
+				// First install Vite and its plugin
+				const installViteProcess = await instance.spawn("pnpm", [
+					"add",
+					"-D",
+					"vite@latest",
+					"@vitejs/plugin-react@latest",
+				]);
 
-				if (!hasRestoredCache) {
-					// First install Vite and its plugin
-					const installViteProcess = await instance.spawn("pnpm", [
-						"add",
-						"-D",
-						"vite@latest",
-						"@vitejs/plugin-react@latest",
-					]);
+				// Stream install output
+				installViteProcess.output.pipeTo(
+					new WritableStream({
+						write(data) {
+							console.log("Vite install output:", data);
+							setStatus({ message: `Installing Vite and plugins...\n${data}` });
+						},
+					}),
+				);
 
-					// Stream install output
-					installViteProcess.output.pipeTo(
-						new WritableStream({
-							write(data) {
-								console.log("Vite install output:", data);
-								setStatus({
-									message: `Installing Vite and plugins...\n${data}`,
-								});
-							},
-						}),
-					);
+				const viteInstallExitCode = await installViteProcess.exit;
+				if (viteInstallExitCode !== 0) {
+					throw new Error("Vite installation failed");
+				}
 
-					const viteInstallExitCode = await installViteProcess.exit;
-					if (viteInstallExitCode !== 0) {
-						throw new Error("Vite installation failed");
-					}
+				// Then install project dependencies
+				const installProcess = await instance.spawn("pnpm", ["install"]);
 
-					// Then install project dependencies
-					const installProcess = await instance.spawn("pnpm", ["install"]);
+				// Stream install output
+				installProcess.output.pipeTo(
+					new WritableStream({
+						write(data) {
+							console.log("Install output:", data);
+							setStatus({ message: data });
+						},
+					}),
+				);
 
-					// Stream install output
-					installProcess.output.pipeTo(
-						new WritableStream({
-							write(data) {
-								console.log("Install output:", data);
-								setStatus({ message: data });
-							},
-						}),
-					);
-
-					const installExitCode = await installProcess.exit;
-					if (installExitCode !== 0) {
-						throw new Error("Installation failed");
-					}
-
-					// Cache the node_modules after successful installation
-					await containerManager.current.cacheNodeModules(instance);
+				const installExitCode = await installProcess.exit;
+				if (installExitCode !== 0) {
+					throw new Error("Installation failed");
 				}
 
 				setStatus({ message: "Starting development server..." });
