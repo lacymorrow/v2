@@ -40,17 +40,19 @@ export const AIDemo: React.FC = () => {
 
 	// Initialize MathJax
 	React.useEffect(() => {
-		window.MathJax = {
-			tex: {
-				inlineMath: [
-					["$", "$"],
-					["\\(", "\\)"],
-				],
-			},
-			svg: {
-				fontCache: "global",
-			},
-		};
+		if (typeof window !== "undefined") {
+			window.MathJax = {
+				tex: {
+					inlineMath: [
+						["$", "$"],
+						["\\(", "\\)"],
+					],
+				},
+				svg: {
+					fontCache: "global",
+				},
+			};
+		}
 	}, []);
 
 	const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -64,7 +66,7 @@ export const AIDemo: React.FC = () => {
 			// Here we'll integrate with the AI model
 			// This is a placeholder until we have access to the actual AI interface
 			// You'll need to replace this with the actual AI interaction
-			const result = await window.aiModel?.generate(prompt);
+			const result = await window?.aiModel?.generate(prompt);
 			setResponse(
 				result || "AI model not ready. Please try again in a moment.",
 			);
@@ -171,7 +173,7 @@ export const AIDemo: React.FC = () => {
 
 			{/* Hidden AI component to initialize the model */}
 			<div className="hidden">
-				<AISmollmWebGPU onReady={() => setIsAIReady(true)} />
+				<AISmollmWebGPU />
 			</div>
 
 			<div className="text-center">

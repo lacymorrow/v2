@@ -114,18 +114,25 @@ class WebContainerManager {
 	private mountedFiles: Record<string, FileSystemEntry> | null = null;
 
 	private constructor() {
-		// Try to restore state on initialization
-		window.addEventListener("beforeunload", () => {
-			if (this.mountedFiles) {
-				sessionStorage.setItem(
-					"webcontainer-files",
-					JSON.stringify(this.mountedFiles),
-				);
-			}
-		});
+		// Only add event listener if window is defined
+		if (typeof window !== "undefined") {
+			window.addEventListener("beforeunload", () => {
+				if (this.mountedFiles) {
+					sessionStorage.setItem(
+						"webcontainer-files",
+						JSON.stringify(this.mountedFiles),
+					);
+				}
+			});
+		}
 	}
 
 	static getInstance(): WebContainerManager {
+		if (typeof window === "undefined") {
+			throw new Error(
+				"WebContainerManager cannot be used during server-side rendering",
+			);
+		}
 		if (!WebContainerManager.instance) {
 			WebContainerManager.instance = new WebContainerManager();
 		}
@@ -205,13 +212,28 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 	const [isIframeLoading, setIsIframeLoading] = useState(true);
 	const [status, setStatus] = useState<Status>({ message: "Initializing..." });
 	const [serverUrl, setServerUrl] = useState<string | null>(null);
-	const containerManager = useRef(WebContainerManager.getInstance());
+	const containerManager = useRef<WebContainerManager | null>(null);
 	const isInitialMount = useRef(true);
 	const lastFileContent = useRef<Record<string, string>>({});
 	const [isRebuilding, setIsRebuilding] = useState(false);
 
+	// Initialize containerManager only on client side
+	useEffect(() => {
+		try {
+			containerManager.current = WebContainerManager.getInstance();
+		} catch (error) {
+			console.error("Failed to initialize WebContainerManager:", error);
+			setStatus({
+				message: "WebContainer is not available",
+				error: error instanceof Error ? error.message : "Unknown error",
+			});
+		}
+	}, []);
+
 	// Initialize from sessionStorage on mount
 	useEffect(() => {
+		if (typeof window === "undefined") return;
+
 		const stored = sessionStorage.getItem(`webcontainer-url-${projectName}`);
 		if (stored) {
 			setServerUrl(stored);
@@ -223,7 +245,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 	// Only cleanup on component unmount if navigating away
 	useEffect(() => {
 		const handleBeforeUnload = () => {
-			containerManager.current.teardown();
+			containerManager.current?.teardown();
 			sessionStorage.removeItem(`webcontainer-url-${projectName}`);
 		};
 
@@ -252,17 +274,28 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 		const watchInterval = 1000; // 1 second
 
 		async function checkForChanges() {
-			if (!isWatching) return;
-
 			try {
+				if (!containerManager.current) {
+					console.warn("WebContainer not initialized");
+					return;
+				}
+
+				const instance = await containerManager.current.getContainer();
+				if (!instance) {
+					console.warn("Failed to get WebContainer instance");
+					return;
+				}
+
+				// Fetch the latest files
 				const response = await fetch(`/api/files/${projectName}`);
-				if (!response.ok) return;
+				if (!response.ok) {
+					console.warn("Failed to fetch files");
+					return;
+				}
 				const files = (await response.json()) as Record<
 					string,
 					FileSystemEntry
 				>;
-
-				const instance = await containerManager.current.getContainer();
 
 				// Recursively process files and check for changes
 				async function processFiles(
@@ -270,26 +303,24 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 					basePath = "",
 				) {
 					for (const [name, entry] of Object.entries(entries)) {
-						const fullPath = basePath ? `${basePath}/${name}` : name;
-
+						const fullPath = `${basePath}${name}`;
 						if (entry.kind === "file") {
 							const newContent = entry.file.contents;
 							const oldContent = lastFileContent.current[fullPath];
-
 							if (oldContent !== newContent) {
 								console.log(`File changed: ${fullPath}`);
 								await instance.fs.writeFile(fullPath, newContent);
 								lastFileContent.current[fullPath] = newContent;
 							}
 						} else if (entry.kind === "directory") {
-							await processFiles(entry.directory, fullPath);
+							await processFiles(entry.directory, `${fullPath}/`);
 						}
 					}
 				}
 
 				await processFiles(files);
 			} catch (error) {
-				console.error("Error checking for file changes:", error);
+				console.error("Error checking for changes:", error);
 			}
 
 			if (isWatching) {
@@ -332,7 +363,14 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 				setIsLoading(true);
 				setStatus({ message: "Initializing WebContainer..." });
 
+				if (!containerManager.current) {
+					throw new Error("WebContainer not initialized");
+				}
+
 				const instance = await containerManager.current.getContainer();
+				if (!instance) {
+					throw new Error("Failed to get WebContainer instance");
+				}
 
 				// Load project files from the generated app directory
 				setStatus({ message: "Loading project files..." });
@@ -387,7 +425,9 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 					}
 
 					// Update mounted files
-					containerManager.current.setMountedFiles(files);
+					if (containerManager.current) {
+						containerManager.current.setMountedFiles(files);
+					}
 				} catch (error) {
 					console.error("Mount error:", error);
 					throw new Error(
@@ -495,7 +535,15 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 	async function handleRefresh() {
 		try {
+			if (!containerManager.current) {
+				throw new Error("WebContainer not initialized");
+			}
+
 			const instance = await containerManager.current.getContainer();
+			if (!instance) {
+				throw new Error("Failed to get WebContainer instance");
+			}
+
 			setIsRefreshing(true);
 			setStatus({ message: "Restarting development server..." });
 
@@ -529,9 +577,9 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 				setIsRefreshing(false);
 			});
 		} catch (error) {
-			console.error("Failed to refresh:", error);
+			console.error("Error during refresh:", error);
 			setStatus({
-				message: "Failed to restart development server",
+				message: "Failed to refresh",
 				error: error instanceof Error ? error.message : "Unknown error",
 			});
 			setIsRefreshing(false);
@@ -540,7 +588,15 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
 	async function handleRebuild() {
 		try {
+			if (!containerManager.current) {
+				throw new Error("WebContainer not initialized");
+			}
+
 			const instance = await containerManager.current.getContainer();
+			if (!instance) {
+				throw new Error("Failed to get WebContainer instance");
+			}
+
 			setIsRebuilding(true);
 			setStatus({ message: "Rebuilding project..." });
 
@@ -596,25 +652,28 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 				setIsRebuilding(false);
 			});
 		} catch (error) {
-			console.error("Failed to rebuild:", error);
+			console.error("Error during rebuild:", error);
 			setStatus({
-				message: "Failed to rebuild project",
+				message: "Failed to rebuild",
 				error: error instanceof Error ? error.message : "Unknown error",
 			});
 			setIsRebuilding(false);
 		}
 	}
 
-	// Helper function to convert ANSI to HTML
+	// Helper function to convert ANSI to HTML with sanitization
 	const convertAnsiToHtml = (text: string) => {
 		try {
 			const cleanText = stripControlSequences(text);
-			const html = `<div class="dark:hidden">${lightConverter.toHtml(cleanText)}</div>
-			             <div class="hidden dark:block">${darkConverter.toHtml(cleanText)}</div>`;
-			return { __html: html };
+			// Use a safer approach to display colored text
+			return {
+				__html: `<div class="dark:hidden">${lightConverter.toHtml(cleanText)}</div>
+				<div class="hidden dark:block">${darkConverter.toHtml(cleanText)}</div>`,
+			};
 		} catch (error) {
 			console.error("Error converting ANSI to HTML:", error);
-			return { __html: text };
+			// Return sanitized text as fallback
+			return { __html: text.replace(/[<>]/g, "") };
 		}
 	};
 

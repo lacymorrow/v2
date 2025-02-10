@@ -22,6 +22,8 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { LayoutToggle } from "@/components/layout-toggle";
 import { WebContainerPreview } from "@/components/web-container-preview";
 
+export const dynamic = "force-dynamic";
+
 export default function HomePage() {
 	const {
 		projectName,
@@ -55,6 +57,10 @@ export default function HomePage() {
 		try {
 			setLoading(true);
 			setGenerationStatus(null);
+
+			if (typeof window === "undefined") {
+				throw new Error("Cannot run in server context");
+			}
 
 			const eventSource = new EventSource(
 				`/api/generate/events?prompt=${encodeURIComponent(prompt)}`,
