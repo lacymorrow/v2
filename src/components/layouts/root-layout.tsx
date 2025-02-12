@@ -11,11 +11,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { TRPCReactProvider } from "@/lib/trpc/react";
 import { cn } from "@/lib/utils";
 import { Analytics } from "@vercel/analytics/react";
+import HolyLoader from "holy-loader";
 import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { ViewTransitions } from "next-view-transitions";
 import { type ReactNode, Suspense } from "react";
+import { PageTracker } from "react-page-tracker";
 import { ErrorToast } from "../primitives/error-toast";
+import { JsonLd } from "../primitives/json-ld";
 
 const fontSerif = FontSerif({
   weight: ["400", "500", "600", "700"],
@@ -46,6 +49,13 @@ export function RootLayout({ children }: { children: ReactNode }) {
             fontSerif.variable
           )}
         >
+          <JsonLd organization website />
+          <HolyLoader
+            showSpinner
+            height={"3px"}
+            color={"linear-gradient(90deg, #FF61D8, #8C52FF, #5CE1E6, #FF61D8)"}
+          />
+          <PageTracker />
           <SessionProvider>
             <TRPCReactProvider>
               <ThemeProvider attribute="class" defaultTheme="dark">
