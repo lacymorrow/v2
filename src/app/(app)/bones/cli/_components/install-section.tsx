@@ -26,16 +26,16 @@ export function InstallSection() {
 
 	const selectText = () => {
 		if (textRef.current) {
-			const selection = window.getSelection();
-			const range = document.createRange();
-			range.selectNodeContents(textRef.current);
+			const selection = window?.getSelection();
+			const range = document?.createRange();
+			range?.selectNodeContents(textRef.current);
 			selection?.removeAllRanges();
 			selection?.addRange(range);
 		}
 	};
 
 	const copyToClipboard = () => {
-		navigator.clipboard.writeText(installCommand);
+		navigator?.clipboard?.writeText(installCommand);
 		setCopied(true);
 		setTimeout(() => setCopied(false), 2000);
 	};
