@@ -1,7 +1,9 @@
 "use client";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useProjectStore } from "@/hooks/use-project-store";
 import { cn } from "@/lib/utils";
+import type { TreeNode } from "@/server/services/file-system";
 import {
 	ChevronDown,
 	ChevronRight,
@@ -12,8 +14,6 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
-import { useProjectStore } from "@/hooks/use-project-store";
-import type { TreeNode } from "@/server/services/file-system";
 
 interface FileExplorerProps {
 	selectedFile?: string | null;
@@ -156,7 +156,7 @@ export function FileExplorer({
 		let eventSource: EventSource | null = null;
 
 		function setupEventSource() {
-			if (eventSource) {
+			if (eventSource || typeof projectName === "undefined") {
 				eventSource.close();
 			}
 
