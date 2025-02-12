@@ -1,8 +1,6 @@
 import { FILE_UPLOAD_MAX_SIZE } from "@/config/file";
 import { redirects } from "@/config/routes";
-import BuilderDevTools from "@builder.io/dev-tools/next";
 import createMDX from "@next/mdx";
-import { withPayload } from "@payloadcms/next/withPayload";
 import type { NextConfig } from "next";
 
 /**
@@ -11,7 +9,6 @@ import type { NextConfig } from "next";
  * Run `build` or `dev` with `SKIP_ENV_VALIDATION` to skip env validation. This is especially useful
  * for Docker builds.
  */
-import { env } from "@/env";
 
 let nextConfig: NextConfig = {
 	/*
@@ -56,7 +53,7 @@ let nextConfig: NextConfig = {
 			* This allows production builds to successfully complete even if
 			* your project has ESLint errors.
 		*/
-		ignoreDuringBuilds: true,
+		// ignoreDuringBuilds: true,
 	},
 	typescript: {
 		/*
@@ -64,7 +61,7 @@ let nextConfig: NextConfig = {
 			* Dangerously allow production builds to successfully complete even if
 			* your project has type errors.
 		*/
-		ignoreBuildErrors: true,
+		// ignoreBuildErrors: true,
 	},
 
 	// Configure `pageExtensions` to include markdown and MDX files
@@ -91,9 +88,9 @@ let nextConfig: NextConfig = {
 	/*
 	 * Miscellaneous configuration
 	 */
-	devIndicators: {
-		// buildActivityPosition: "bottom-right" as const,
-	},
+	// devIndicators: {
+	// 	buildActivityPosition: "bottom-right" as const,
+	// },
 	async headers() {
 		return [
 			{
@@ -131,32 +128,32 @@ let nextConfig: NextConfig = {
 		},
 	},
 
-	compiler: {
-		// Remove all console logs
-		// removeConsole: true
-		// Remove console logs only in production, excluding error logs
-		// removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error"] } : false
-	},
+	// compiler: {
+	// Remove all console logs
+	// removeConsole: true
+	// Remove console logs only in production, excluding error logs
+	// removeConsole: process.env.NODE_ENV === "production" ? { exclude: ["error"] } : false
+	// },
 
-	webpack: (config, { isServer }) => {
-		// Add custom webpack configuration for handling binary files
-		config.module.rules.push({
-			test: /\.(node|bin|html)$/,
-			use: "raw-loader",
-		});
+	// 	webpack: (config, { isServer }) => {
+	// 		// Add custom webpack configuration for handling binary files
+	// 		config.module.rules.push({
+	// 			test: /\.(node|bin|html)$/,
+	// 			use: "raw-loader",
+	// 		});
 
-		if (!isServer) {
-			// Don't attempt to bundle native modules on client-side
-			config.resolve.fallback = {
-				...config.resolve.fallback,
-			};
-		} else {
-			// Externalize native modules on server-side
-			config.externals = [...(config.externals || []), "bcrypt"];
-		}
+	// 		if (!isServer) {
+	// 			// Don't attempt to bundle native modules on client-side
+	// 			config.resolve.fallback = {
+	// 				...config.resolve.fallback,
+	// 			};
+	// 		} else {
+	// 			// Externalize native modules on server-side
+	// 			config.externals = [...(config.externals || []), "bcrypt"];
+	// 		}
 
-		return config;
-	},
+	// 		return config;
+	// 	},
 };
 
 /*
@@ -164,28 +161,8 @@ let nextConfig: NextConfig = {
  * Order matters!
  */
 
-// Builder config
-nextConfig =
-	!env?.NEXT_PUBLIC_BUILDER_API_KEY || !!env?.DISABLE_BUILDER
-		? nextConfig
-		: BuilderDevTools()(nextConfig);
-
-// Payload config
-nextConfig =
-	!env?.DATABASE_URL || !!env?.DISABLE_PAYLOAD
-		? nextConfig
-		: withPayload(nextConfig);
-
-// const withPWA = pwa({
-// 	dest: "public",
-// 	// disable: process.env.NODE_ENV === "development",
-// 	// register: true,
-// 	// skipWaiting: true,
-// });
-// nextConfig = withPWA(nextConfig);
-
 /*
- * MDX config
+ * MDX config - should be last or second to last
  */
 const withMDX = createMDX({
 	extension: /\.mdx?$/,
@@ -208,7 +185,7 @@ const withMDX = createMDX({
 nextConfig = withMDX(nextConfig);
 
 /*
- * Logflare config
+ * Logflare config - should be last
  */
 /** @type {import("./withLogFlare.js").LogFlareOptions} */
 // const logFlareOptions = {

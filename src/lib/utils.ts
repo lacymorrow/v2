@@ -13,4 +13,3 @@ export function generateRandomName(): string {
 	const noun = nouns[Math.floor(Math.random() * nouns.length)];
 	return `${adjective}-${noun}-${Math.floor(Math.random() * 1000)}`;
 }
-
