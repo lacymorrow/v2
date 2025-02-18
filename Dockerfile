@@ -1,4 +1,6 @@
 FROM node:20-slim AS builder
+ARG OPENAI_API_KEY
+ENV OPENAI_API_KEY=${OPENAI_API_KEY}
 
 # Install build dependencies for native module compilation
 RUN apt-get update && apt-get install -y python3 python3-distutils build-essential && rm -rf /var/lib/apt/lists/*
@@ -16,6 +18,8 @@ COPY . .
 RUN pnpm run build
 
 FROM node:20-slim
+ARG OPENAI_API_KEY
+ENV OPENAI_API_KEY=${OPENAI_API_KEY}
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y python3 python3-distutils build-essential && rm -rf /var/lib/apt/lists/*
