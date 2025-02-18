@@ -1,7 +1,7 @@
 "use client";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useProjectStore } from "@/hooks/use-project-store";
+import { useProjectStore } from "@/app/(vite0)/use-project-store";
 import { cn } from "@/lib/utils";
 import type { TreeNode } from "@/server/services/file-system";
 import {
@@ -13,7 +13,7 @@ import {
 	RefreshCw,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button } from "./ui/button";
+import { Button } from "../../components/ui/button";
 
 interface FileExplorerProps {
 	selectedFile?: string | null;

@@ -15,7 +15,7 @@ export interface DirectoryEntry {
 
 export type WebContainerFiles = Record<string, FileEntry | DirectoryEntry>;
 
-const TEMPLATE_PATH = path.join(process.cwd(), 'templates/vite');
+const TEMPLATE_PATH = path.join(process.cwd(), 'public', 'templates', 'vite');
 
 /**
  * Recursively builds a directory entry for WebContainer

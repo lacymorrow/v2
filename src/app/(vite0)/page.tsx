@@ -1,14 +1,14 @@
 "use client";
 
-import { CodeEditor } from "@/components/code-editor";
-import { FileExplorer } from "@/components/file-explorer";
-import { Preview } from "@/components/preview";
-import { ProjectHeader } from "@/components/project-header";
-import { ResizablePanels } from "@/components/resizable-panels";
+import { CodeEditor } from "./code-editor";
+import { FileExplorer } from "./file-explorer";
+import { Preview } from "./preview";
+import { ProjectHeader } from "./project-header";
+import { ResizablePanels } from "./resizable-panels";
 import { Card } from "@/components/ui/card";
-import { useProjectStore } from "@/hooks/use-project-store";
+import { useProjectStore } from "./use-project-store";
 import { Progress } from "@/components/ui/progress";
-import { Chat } from "@/components/chat";
+import { Chat } from "./chat";
 import { cn } from "@/lib/utils";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -19,8 +19,8 @@ import {
 } from "@/components/ui/resizable";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { LayoutToggle } from "@/components/layout-toggle";
-import { WebContainerPreview } from "@/components/web-container-preview";
+import { LayoutToggle } from "./layout-toggle";
+import { WebContainerPreview } from "./web-container-preview";
 
 export default function HomePage() {
 	const {

@@ -10,7 +10,7 @@ import {
 import { cn } from "@/lib/utils";
 import { FolderTree, MessageSquare, MonitorIcon, Code2 } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
-import { ThemeToggle } from "./ui/theme";
+import { ThemeToggle } from "../../components/ui/theme";
 
 interface LayoutToggleProps {
 	showFileTree: boolean;
