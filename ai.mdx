@@ -1,0 +1,12 @@
+# Deployment Plan
+
+## Railway Deployment
+- [ ] Create a custom Dockerfile for Railway deployment that installs required build dependencies (including python3-distutils and build-essential).
+- [ ] Update the Dockerfile to use a stable Node.js version (e.g., node:20-slim) to compile native modules properly.
+- [ ] Test the Docker build locally to ensure that `isolated-vm` compiles without errors.
+- [ ] Configure Railway to use the custom Dockerfile for deployment.
+- [ ] Monitor deployment logs and verify production readiness.
+
+## Notes
+- The issue with `isolated-vm` is due to Python's missing distutils module, resolved by installing python3-distutils.
+- Using Railway allows us to utilize a custom Docker container, providing control over system dependencies required for native module compilation.
