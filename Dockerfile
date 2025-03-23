@@ -1,4 +1,4 @@
-FROM node:20-slim AS builder
+FROM node:22-slim AS builder
 ARG OPENAI_API_KEY
 ENV OPENAI_API_KEY=${OPENAI_API_KEY}
 
@@ -17,9 +17,11 @@ COPY . .
 # Build the Next.js application
 RUN pnpm run build
 
-FROM node:20-slim
+FROM node:22-slim
 ARG OPENAI_API_KEY
 ENV OPENAI_API_KEY=${OPENAI_API_KEY}
+
+ENV PATH="/usr/local/bin:$PATH"
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y python3 python3-distutils build-essential && rm -rf /var/lib/apt/lists/*
@@ -33,4 +35,4 @@ COPY --from=builder /app ./
 EXPOSE 3000
 
 # Start the application
-CMD ["pnpm", "start"]
+CMD ["npm", "start"]

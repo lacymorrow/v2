@@ -92,6 +92,7 @@
     "@vercel/analytics": "1.4.1",
     "@vercel/otel": "1.10.0",
     "@vercel/speed-insights": "^1.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
     "@webcontainer/api": "^1.1.8",
     "ai": "4.0.22",
     "ansi-to-html": "^0.7.2",
