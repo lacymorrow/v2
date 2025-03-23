@@ -1,4 +1,14 @@
 {
-	"installCommand": "pnpm install",
-	"buildCommand": "pnpm build"
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm build",
+  "regions": ["sfo1"],
+  "functions": {
+    "src/app/api/generate/**/*": {
+      "memory": 3008,
+      "maxDuration": 300
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  }
 }

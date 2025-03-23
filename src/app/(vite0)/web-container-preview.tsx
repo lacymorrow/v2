@@ -1,16 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { WebContainer } from "@webcontainer/api";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Loader2, RefreshCcw, Hammer } from "lucide-react";
+import { WebContainer } from "@webcontainer/api";
 import Convert from "ansi-to-html";
+import { Hammer, Loader2, RefreshCcw } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 // Create two converters for light and dark modes with appropriate colors
 const stripControlSequences = (text: string) => {
@@ -250,263 +249,124 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
     };
   }, [projectName]);
 
-  // Effect to update iframe src when serverUrl changes
-  useEffect(() => {
-    if (serverUrl && iframeRef.current) {
-      console.log("Updating iframe src to:", serverUrl);
-      setIsIframeLoading(true);
-      iframeRef.current.src = serverUrl;
-      // Store URL in sessionStorage
-      sessionStorage.setItem(`webcontainer-url-${projectName}`, serverUrl);
-    }
-  }, [serverUrl, projectName]);
-
-  // File watching effect
-  useEffect(() => {
-    if (!projectName) return;
-
-    let isWatching = true;
-    const watchInterval = 1000; // 1 second
-
-    async function checkForChanges() {
-      if (!isWatching) return;
-
-      try {
-        const response = await fetch(`/api/files/${projectName}`);
-        if (!response.ok) return;
-        const files = (await response.json()) as Record<
-          string,
-          FileSystemEntry
-        >;
-
-        const instance = await containerManager.current.getContainer();
-
-        // Recursively process files and check for changes
-        async function processFiles(
-          entries: Record<string, FileSystemEntry>,
-          basePath = ""
-        ) {
-          for (const [name, entry] of Object.entries(entries)) {
-            const fullPath = basePath ? `${basePath}/${name}` : name;
-
-            if (entry.kind === "file") {
-              const newContent = entry.file.contents;
-              const oldContent = lastFileContent.current[fullPath];
-
-              if (oldContent !== newContent) {
-                console.log(`File changed: ${fullPath}`);
-                await instance.fs.writeFile(fullPath, newContent);
-                lastFileContent.current[fullPath] = newContent;
-              }
-            } else if (entry.kind === "directory") {
-              await processFiles(entry.directory, fullPath);
-            }
-          }
-        }
-
-        await processFiles(files);
-      } catch (error) {
-        console.error("Error checking for file changes:", error);
-      }
-
-      if (isWatching) {
-        setTimeout(checkForChanges, watchInterval);
-      }
-    }
-
-    // Start watching
-    checkForChanges();
-
-    return () => {
-      isWatching = false;
-    };
-  }, [projectName]);
-
-  // Handle iframe load events
-  const handleIframeLoad = () => {
-    console.log("Iframe loaded");
-    setIsIframeLoading(false);
-    setStatus({ message: "Preview ready!" });
-  };
-
+  // The main effect for starting the WebContainer
   useEffect(() => {
     if (!projectName || !isInitialMount.current) return;
     isInitialMount.current = false;
 
-    // Check sessionStorage on mount
-    const stored = sessionStorage.getItem(`webcontainer-url-${projectName}`);
-    if (stored) {
-      setServerUrl(stored);
-      setIsLoading(false);
-      setStatus({ message: "Server ready!" });
-      return;
-    }
+    // If we already have a server URL from session storage, we don't need to start again
+    if (serverUrl) return;
 
     let isActive = true;
     async function startDevServer() {
       try {
-        if (!isActive) return;
         setIsLoading(true);
-        setStatus({ message: "Initializing WebContainer..." });
+        setStatus({ message: "Loading WebContainer..." });
 
-        const instance = await containerManager.current?.getContainer();
-        if (!instance) {
+        // 1. Initialize the WebContainer
+        const instance = await containerManager.current.getContainer();
+        if (!instance || !isActive) {
           throw new Error("Failed to initialize WebContainer");
         }
 
-        // Load project files from the generated app directory
+        // 2. Fetch project files from API
         setStatus({ message: "Loading project files..." });
-        const response = await fetch(`/api/files/${projectName}`);
+        const response = await fetch(`/api/files/${projectName}?root=true`);
+
         if (!response.ok) {
+          const errorText = await response.text();
           throw new Error(
-            `Failed to load project files: ${response.statusText}`
+            `Failed to load project files: ${response.status} - ${errorText}`
           );
         }
-        const files = (await response.json()) as Record<
-          string,
-          FileSystemEntry
-        >;
 
-        // Mount the project files
-        setStatus({ message: "Mounting project files..." });
-        try {
-          console.log("Files to be mounted:", JSON.stringify(files, null, 2));
-          await instance.mount(files);
+        const entries = await response.json();
 
-          // Store initial file contents for change detection
-          async function storeInitialContent(
-            entries: Record<string, FileSystemEntry>,
-            basePath = ""
-          ) {
-            for (const [name, entry] of Object.entries(entries)) {
-              const fullPath = basePath ? `${basePath}/${name}` : name;
-              if (entry.kind === "file") {
-                lastFileContent.current[fullPath] = entry.file.contents;
-              } else if (entry.kind === "directory") {
-                await storeInitialContent(entry.directory, fullPath);
+        if (!entries || Object.keys(entries).length === 0) {
+          throw new Error("No files found for this project");
+        }
+
+        // 3. Mount project files in WebContainer
+        setStatus({ message: "Mounting files..." });
+        await instance.mount(entries);
+        containerManager.current.setMountedFiles(entries);
+
+        // Store initial content for later comparison
+        await storeInitialContent(entries);
+
+        // 4. Start the dev server
+        setStatus({ message: "Starting dev server..." });
+
+        // Create terminal for output
+        const terminal = await instance.spawn("pnpm", ["dev", "--host"]);
+
+        // Set up output handling
+        const stdoutStream = await terminal.output.pipeTo(
+          new WritableStream({
+            write(data) {
+              if (!isActive) return;
+
+              // Look for server URL in the output
+              if (data.includes("Local:") && data.includes("http")) {
+                const match = data.match(/(https?:\/\/localhost:[0-9]+)/);
+                if (match && match[1]) {
+                  const url = match[1];
+                  setServerUrl(url);
+                  sessionStorage.setItem(
+                    `webcontainer-url-${projectName}`,
+                    url
+                  );
+                  setIsLoading(false);
+                }
               }
-            }
-          }
-          await storeInitialContent(files);
 
-          // Add directory listing after mounting
-          const dirList = await instance.fs.readdir("/", {
-            withFileTypes: true,
-          });
-          console.log("Mounted directory structure:", dirList);
-
-          // Specifically check for main.tsx
-          try {
-            const mainExists = await instance.fs.readFile(
-              "/src/main.tsx",
-              "utf-8"
-            );
-            console.log("main.tsx exists and contains:", mainExists);
-          } catch (error) {
-            console.error("Error reading main.tsx:", error);
-          }
-
-          // Update mounted files
-          containerManager.current?.setMountedFiles(files);
-        } catch (error) {
-          console.error("Mount error:", error);
-          throw new Error(
-            `Failed to mount files: ${error instanceof Error ? error.message : "Unknown error"}`
-          );
-        }
-
-        // Install dependencies
-        setStatus({ message: "Installing dependencies..." });
-
-        // First install Vite and its plugin
-        const installViteProcess = await instance.spawn("pnpm", [
-          "add",
-          "-D",
-          "vite",
-          "@vitejs/plugin-react",
-        ]);
-
-        if (!installViteProcess) {
-          throw new Error("Failed to start Vite installation process");
-        }
-
-        // Stream install output
-        installViteProcess.output.pipeTo(
-          new WritableStream({
-            write(data) {
-              console.log("Vite install output:", data);
-              setStatus({ message: `Installing Vite and plugins...\n${data}` });
+              const htmlOutput = convertAnsiToHtml(data);
+              setStatus({
+                message: "Server output",
+                isHtml: true,
+                error: htmlOutput,
+              });
             },
           })
         );
 
-        const viteInstallExitCode = await installViteProcess.exit;
-        if (viteInstallExitCode !== 0) {
-          throw new Error("Vite installation failed");
-        }
-
-        // Then install project dependencies
-        const installProcess = await instance.spawn("pnpm", ["install"]);
-
-        // Stream install output
-        installProcess.output.pipeTo(
+        // Set up error handling
+        const stderrStream = await terminal.stderr.pipeTo(
           new WritableStream({
             write(data) {
-              console.log("Install output:", data);
-              setStatus({ message: data });
+              if (!isActive) return;
+              const htmlOutput = convertAnsiToHtml(data);
+              setStatus({
+                message: "Server error",
+                isHtml: true,
+                error: htmlOutput,
+              });
             },
           })
         );
-
-        const installExitCode = await installProcess.exit;
-        if (installExitCode !== 0) {
-          throw new Error("Installation failed");
-        }
-
-        setStatus({ message: "Starting development server..." });
-        const devProcess = await instance.spawn("pnpm", [
-          "run",
-          "dev",
-          "--host",
-        ]);
-
-        // Stream server output
-        devProcess.output.pipeTo(
-          new WritableStream({
-            write(data) {
-              console.log("Server output:", data);
-              setStatus({ message: data });
-            },
-          })
-        );
-
-        // Wait for the server to be ready
-        instance.on("server-ready", (port, url) => {
-          console.log("Server ready:", port, url);
-          if (!isActive) return;
-
-          // Update iframe source via state
-          const iframeUrl = url.replace("localhost", "0.0.0.0");
-          console.log("Setting server URL to:", iframeUrl);
-          setServerUrl(iframeUrl);
-          setIsLoading(false);
-          setStatus({ message: "Server ready!" });
-        });
 
         // Handle server exit
-        devProcess.exit.then((code) => {
+        terminal.exit.then((code) => {
+          if (!isActive) return;
           if (code !== 0) {
-            setStatus({ message: "Server crashed" });
+            setStatus({
+              message: `Server exited with code ${code}`,
+              error: "The development server crashed",
+            });
+            setIsLoading(false);
           }
         });
       } catch (error) {
+        console.error("WebContainer error:", error);
         if (!isActive) return;
-        console.error("Failed to start WebContainer:", error);
-        setIsLoading(false);
+
+        const errorMessage =
+          error instanceof Error ? error.message : "Unknown error";
         setStatus({
-          message: "Failed to start development server",
-          error: error instanceof Error ? error.message : "Unknown error",
+          message: "Failed to start WebContainer",
+          error: errorMessage,
         });
+        setIsLoading(false);
       }
     }
 
@@ -515,131 +375,23 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
     return () => {
       isActive = false;
     };
-  }, [projectName]);
+  }, [projectName, serverUrl]);
 
-  async function handleRefresh() {
-    try {
-      const instance = await containerManager.current?.getContainer();
-      if (!instance) {
-        throw new Error("Failed to get WebContainer instance");
+  // Function to store initial file content for change detection
+  async function storeInitialContent(
+    entries: Record<string, FileSystemEntry>,
+    basePath = ""
+  ) {
+    if (!entries) return;
+
+    for (const [name, entry] of Object.entries(entries)) {
+      const fullPath = basePath ? `${basePath}/${name}` : name;
+
+      if (entry.kind === "file" && entry.file.contents) {
+        lastFileContent.current[fullPath] = entry.file.contents;
+      } else if (entry.kind === "directory" && entry.directory) {
+        await storeInitialContent(entry.directory, fullPath);
       }
-
-      setIsRefreshing(true);
-      setStatus({ message: "Restarting development server..." });
-
-      // Restart the dev server
-      const devProcess = await instance.spawn("pnpm", ["run", "dev", "--host"]);
-      if (!devProcess) {
-        throw new Error("Failed to start development server");
-      }
-
-      // Stream server output
-      devProcess.output.pipeTo(
-        new WritableStream({
-          write(data) {
-            console.log("Dev server output:", data);
-            setStatus({ message: data });
-          },
-        })
-      );
-
-      // Wait for server to be ready
-      instance.on("server-ready", (port, url) => {
-        console.log("Server ready:", port, url);
-        const iframeUrl = url.replace("localhost", "0.0.0.0");
-        setServerUrl(iframeUrl);
-        setIsRefreshing(false);
-        setStatus({ message: "Server ready!" });
-      });
-
-      // Handle server exit
-      devProcess.exit.then((code) => {
-        if (code !== 0) {
-          setStatus({ message: "Server crashed" });
-        }
-        setIsRefreshing(false);
-      });
-    } catch (error) {
-      console.error("Failed to refresh:", error);
-      setStatus({
-        message: "Failed to restart development server",
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-      setIsRefreshing(false);
-    }
-  }
-
-  async function handleRebuild() {
-    try {
-      const instance = await containerManager.current?.getContainer();
-      if (!instance) {
-        throw new Error("Failed to get WebContainer instance");
-      }
-
-      setIsRebuilding(true);
-      setStatus({ message: "Rebuilding project..." });
-
-      // Clean install
-      const cleanProcess = await instance.spawn("pnpm", ["clean"]);
-      if (!cleanProcess) {
-        throw new Error("Failed to start clean process");
-      }
-      await cleanProcess.exit;
-
-      // Reinstall dependencies
-      const installProcess = await instance.spawn("pnpm", ["install"]);
-
-      // Stream install output
-      installProcess.output.pipeTo(
-        new WritableStream({
-          write(data) {
-            console.log("Install output:", data);
-            setStatus({ message: data });
-          },
-        })
-      );
-
-      const installExitCode = await installProcess.exit;
-      if (installExitCode !== 0) {
-        throw new Error("Installation failed");
-      }
-
-      // Start dev server
-      const devProcess = await instance.spawn("pnpm", ["run", "dev", "--host"]);
-
-      // Stream server output
-      devProcess.output.pipeTo(
-        new WritableStream({
-          write(data) {
-            console.log("Server output:", data);
-            setStatus({ message: data });
-          },
-        })
-      );
-
-      // Wait for server to be ready
-      instance.on("server-ready", (port, url) => {
-        console.log("Server ready:", port, url);
-        const iframeUrl = url.replace("localhost", "0.0.0.0");
-        setServerUrl(iframeUrl);
-        setIsRebuilding(false);
-        setStatus({ message: "Server ready!" });
-      });
-
-      // Handle server exit
-      devProcess.exit.then((code) => {
-        if (code !== 0) {
-          setStatus({ message: "Server crashed" });
-        }
-        setIsRebuilding(false);
-      });
-    } catch (error) {
-      console.error("Failed to rebuild:", error);
-      setStatus({
-        message: "Failed to rebuild project",
-        error: error instanceof Error ? error.message : "Unknown error",
-      });
-      setIsRebuilding(false);
     }
   }
 

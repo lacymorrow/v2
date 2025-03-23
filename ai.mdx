@@ -7,6 +7,13 @@
 - [ ] Configure Railway to use the custom Dockerfile for deployment.
 - [ ] Monitor deployment logs and verify production readiness.
 
+## Vercel Deployment
+- [x] Update file storage paths to use `/tmp` directory in production environments, which is writable in serverless functions.
+- [x] Fix WebContainerPreview component to better handle error cases and production environment.
+- [x] Update vercel.json to increase memory and timeout for app generation functions.
+- [x] Ensure consistent path handling across all services and components.
+
 ## Notes
 - The issue with `isolated-vm` is due to Python's missing distutils module, resolved by installing python3-distutils.
 - Using Railway allows us to utilize a custom Docker container, providing control over system dependencies required for native module compilation.
+- For Vercel, the `/tmp` directory is the only writable location. The code now detects environment and uses appropriate paths.

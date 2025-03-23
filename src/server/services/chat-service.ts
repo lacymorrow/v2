@@ -33,7 +33,11 @@ interface CodeBlock {
 	code: string;
 }
 
-const APP_STORAGE_PATH = path.join(process.cwd(), 'public', 'generated-apps');
+const APP_STORAGE_PATH = process.env.NODE_ENV === 'production'
+	? path.join('/tmp', 'generated-apps')
+	: process.env.APP_STORAGE_PATH
+		? path.join(process.cwd(), process.env.APP_STORAGE_PATH)
+		: path.join(process.cwd(), "public", "generated-apps");
 
 // Read the v2 prompt from the file system
 async function getV2Prompt(): Promise<string> {

@@ -14,15 +14,21 @@ interface GenerateAppOptions {
 	onProgress?: (step: string, progress: number) => void;
 }
 
-export const APP_STORAGE_PATH = process.env.APP_STORAGE_PATH
-	? path.join(process.cwd(), process.env.APP_STORAGE_PATH)
-	: path.join(process.cwd(), 'public', 'generated-apps');
+// For production (serverless) environments, use /tmp directory which is writable
+// For local development, use the paths within the project
+export const APP_STORAGE_PATH = process.env.NODE_ENV === 'production'
+	? path.join('/tmp', 'generated-apps')
+	: process.env.APP_STORAGE_PATH
+		? path.join(process.cwd(), process.env.APP_STORAGE_PATH)
+		: path.join(process.cwd(), 'public', 'generated-apps');
 
-export const STATIC_BUILDS_PATH = process.env.STATIC_BUILDS_PATH
-	? path.join(process.cwd(), process.env.STATIC_BUILDS_PATH)
-	: path.join(process.cwd(), 'public', 'builds');
+export const STATIC_BUILDS_PATH = process.env.NODE_ENV === 'production'
+	? path.join('/tmp', 'builds')
+	: process.env.STATIC_BUILDS_PATH
+		? path.join(process.cwd(), process.env.STATIC_BUILDS_PATH)
+		: path.join(process.cwd(), 'public', 'builds');
 
-// Pre-built node_modules path
+// Pre-built node_modules path - this should still be in the project directory in both environments
 const TEMPLATE_PATH = path.join(process.cwd(), 'public', 'vite-project');
 const CACHED_MODULES_PATH = path.join(TEMPLATE_PATH, 'node_modules');
 
