@@ -16,7 +16,7 @@ interface GenerateAppOptions {
 
 export const APP_STORAGE_PATH = process.env.APP_STORAGE_PATH
 	? path.join(process.cwd(), process.env.APP_STORAGE_PATH)
-	: path.join(process.cwd(), 'public', 'generated-apps');
+	: path.join(process.cwd(), 'generated-apps');
 
 export const STATIC_BUILDS_PATH = process.env.STATIC_BUILDS_PATH
 	? path.join(process.cwd(), process.env.STATIC_BUILDS_PATH)

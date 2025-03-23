@@ -1,5 +1,5 @@
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -63,6 +63,7 @@ export async function GET(
 	const name = (await params).name;
 	try {
 		const projectPath = path.join(APP_STORAGE_PATH, name);
+		console.log("projectPath", projectPath);
 
 		// Check if the project directory exists
 		try {
