@@ -1,10 +1,10 @@
-import OpenAI from "openai";
 import { env } from "@/env";
+import { refreshFileTree } from "@/server/actions/file-actions";
 import fs from "fs/promises";
+import OpenAI from "openai";
+import type { ChatCompletionChunk } from "openai/resources/chat/completions";
 import path from "path";
 import { writeProjectFile } from "./file-system";
-import { refreshFileTree } from "@/server/actions/file-actions";
-import type { ChatCompletionChunk } from "openai/resources/chat/completions";
 
 // Initialize clients
 const openai = new OpenAI({
@@ -33,7 +33,7 @@ interface CodeBlock {
 	code: string;
 }
 
-const APP_STORAGE_PATH = path.join(process.cwd(), 'generated-apps');
+const APP_STORAGE_PATH = path.join(process.cwd(), 'public', 'generated-apps');
 
 // Read the v2 prompt from the file system
 async function getV2Prompt(): Promise<string> {

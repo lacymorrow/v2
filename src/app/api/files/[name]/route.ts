@@ -5,7 +5,7 @@ import path from "node:path";
 
 const APP_STORAGE_PATH = process.env.APP_STORAGE_PATH
 	? path.join(process.cwd(), process.env.APP_STORAGE_PATH)
-	: path.join(process.cwd(), "generated-apps");
+	: path.join(process.cwd(), "public", "generated-apps");
 
 function normalizeFilePath(filePath: string): string {
 	// Convert Windows paths to forward slashes and ensure no leading slash
