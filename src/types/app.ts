@@ -1,10 +1,13 @@
+/**
+ * A generated app model
+ */
 export interface GeneratedApp {
     id: string;
     prompt: string;
-    template: 'react' | 'next';
+    template: string;
     createdAt: Date;
     publicUrl: string;
-    status: 'pending' | 'generating' | 'ready' | 'error';
+    status: 'generating' | 'ready' | 'error';
     dependencies: string[];
     error?: string;
     aiChanges?: {

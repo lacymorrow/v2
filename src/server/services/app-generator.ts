@@ -4,6 +4,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { saveGeneratedApp, updateGeneratedAppStatus } from '../models/generated-app';
+import { BlobStorage } from './storage/blob-storage';
 
 const execAsync = promisify(exec);
 
@@ -103,7 +105,13 @@ export async function generateApp({
 	const appId = crypto.randomUUID();
 	const appPath = path.join(APP_STORAGE_PATH, name);
 	const buildPath = path.join(STATIC_BUILDS_PATH, name);
-	const publicUrl = `/builds/${name}/index.html`;
+
+	// For development, static files are served directly from the filesystem
+	let publicUrl = `/builds/${name}/index.html`;
+
+	// In production, we'll update this with the blob URL
+	const isProd = process.env.NODE_ENV === 'production';
+	const blobStorage = isProd ? new BlobStorage() : null;
 
 	const app: GeneratedApp = {
 		id: appId,
@@ -114,6 +122,14 @@ export async function generateApp({
 		status: 'generating',
 		dependencies: [],
 	};
+
+	// Save initial app record to database
+	try {
+		await saveGeneratedApp(app);
+	} catch (error) {
+		console.warn("Failed to save initial app to database:", error);
+		// Continue even if database save fails
+	}
 
 	try {
 		// Ensure clean state
@@ -180,8 +196,39 @@ export async function generateApp({
 		await fs.mkdir(buildPath, { recursive: true });
 		await fs.cp(distPath, buildPath, { recursive: true });
 
+		// If in production, upload to blob storage
+		if (isProd && blobStorage) {
+			notify("Uploading to storage", 95);
+			try {
+				// Upload the build files to blob storage
+				const fileMap = await blobStorage.uploadDirectory(buildPath, name);
+
+				// Find the index.html file URL to use as the public URL
+				for (const [filePath, url] of fileMap.entries()) {
+					if (filePath.endsWith('index.html')) {
+						publicUrl = url;
+						break;
+					}
+				}
+
+				// Update the app with the blob URL
+				app.publicUrl = publicUrl;
+			} catch (uploadError) {
+				console.error("Failed to upload to blob storage:", uploadError);
+				// Continue with local file URL if upload fails
+			}
+		}
+
 		app.status = 'ready';
 		notify("Complete", 100);
+
+		// Update the database with the final app state
+		try {
+			await saveGeneratedApp(app);
+		} catch (dbError) {
+			console.warn("Failed to update app in database:", dbError);
+			// Continue even if database save fails
+		}
 	} catch (error) {
 		console.error('Error generating app:', error);
 		// Cleanup on error
@@ -192,6 +239,14 @@ export async function generateApp({
 
 		app.status = 'error';
 		app.error = error instanceof Error ? error.message : 'Unknown error';
+
+		// Update the database with the error state
+		try {
+			await updateGeneratedAppStatus(app.id, 'error', app.error);
+		} catch (dbError) {
+			console.warn("Failed to update error status in database:", dbError);
+		}
+
 		throw error;
 	}
 

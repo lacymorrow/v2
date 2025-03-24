@@ -209,6 +209,9 @@ function SafeHtmlOutput({ html }: { html: string }) {
   return (
     <div
       className="whitespace-pre-wrap font-mono text-sm"
+      // Using dangerouslySetInnerHTML is necessary here to render terminal output with colors
+      // The input is sanitized by the ansi-to-html converter
+      // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -225,6 +228,113 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
   const isInitialMount = useRef(true);
   const lastFileContent = useRef<Record<string, string>>({});
   const [isRebuilding, setIsRebuilding] = useState(false);
+
+  // Handle iframe loading events
+  const handleIframeLoad = () => {
+    setIsIframeLoading(false);
+  };
+
+  // Handle refreshing the WebContainer instance
+  const handleRefresh = async () => {
+    if (isRefreshing || isLoading || !projectName) return;
+
+    setIsRefreshing(true);
+    setIsIframeLoading(true);
+    setStatus({ message: "Restarting dev server..." });
+
+    try {
+      // Clear server URL to trigger a full reload
+      sessionStorage.removeItem(`webcontainer-url-${projectName}`);
+      setServerUrl(null);
+
+      // Wait a bit to let the current container clean up
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Restart the container
+      await containerManager.current.teardown();
+      isInitialMount.current = true;
+    } catch (error) {
+      console.error("Error refreshing WebContainer:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      setStatus({
+        message: "Failed to refresh WebContainer",
+        error: errorMessage,
+      });
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Handle rebuilding the project
+  const handleRebuild = async () => {
+    if (isRebuilding || isLoading || !projectName) return;
+
+    setIsRebuilding(true);
+    setStatus({ message: "Rebuilding project..." });
+
+    try {
+      const instance = await containerManager.current.getContainer();
+      if (!instance) {
+        throw new Error("WebContainer not initialized");
+      }
+
+      // Run npm/pnpm install to rebuild dependencies
+      const terminal = await instance.spawn("pnpm", ["install"]);
+
+      // Handle output
+      await terminal.output.pipeTo(
+        new WritableStream({
+          write(data) {
+            const htmlOutput = convertAnsiToHtml(data);
+            setStatus({
+              message: "Build output",
+              isHtml: true,
+              error: htmlOutput,
+            });
+          },
+        })
+      );
+
+      // Handle errors
+      await terminal.stderr.pipeTo(
+        new WritableStream({
+          write(data) {
+            const htmlOutput = convertAnsiToHtml(data);
+            setStatus({
+              message: "Build error",
+              isHtml: true,
+              error: htmlOutput,
+            });
+          },
+        })
+      );
+
+      // Wait for completion
+      const exitCode = await terminal.exit;
+
+      if (exitCode !== 0) {
+        throw new Error(`Build failed with exit code ${exitCode}`);
+      }
+
+      setStatus({ message: "Rebuild completed successfully" });
+
+      // Refresh the iframe if we have a server URL
+      if (serverUrl && iframeRef.current) {
+        iframeRef.current.src = serverUrl;
+      }
+    } catch (error) {
+      console.error("Error rebuilding project:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      setStatus({
+        message: "Failed to rebuild project",
+        error: errorMessage,
+      });
+    } finally {
+      setIsRebuilding(false);
+    }
+  };
 
   // Initialize from sessionStorage on mount
   useEffect(() => {
@@ -401,10 +511,10 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
       const cleanText = stripControlSequences(text);
       const html = `<div class="dark:hidden">${lightConverter.toHtml(cleanText)}</div>
 			             <div class="hidden dark:block">${darkConverter.toHtml(cleanText)}</div>`;
-      return { __html: html };
+      return html;
     } catch (error) {
       console.error("Error converting ANSI to HTML:", error);
-      return { __html: text };
+      return text;
     }
   };
 
@@ -475,9 +585,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
               )}
               <div className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap text-center font-mono dark:text-white">
                 {status.isHtml ? (
-                  <SafeHtmlOutput
-                    html={convertAnsiToHtml(status.message).__html}
-                  />
+                  <SafeHtmlOutput html={convertAnsiToHtml(status.message)} />
                 ) : (
                   <span className="whitespace-pre-wrap font-mono text-sm">
                     {status.message}

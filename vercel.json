@@ -10,5 +10,19 @@
   },
   "env": {
     "NODE_ENV": "production"
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ],
+  "builds": [
+    { "src": "package.json", "use": "@vercel/node" },
+    {
+      "src": "scripts/db-setup.js",
+      "use": "@vercel/node",
+      "config": { "includeFiles": ["src/server/migrations/**"] }
+    }
+  ]
 }

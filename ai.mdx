@@ -17,3 +17,74 @@
 - The issue with `isolated-vm` is due to Python's missing distutils module, resolved by installing python3-distutils.
 - Using Railway allows us to utilize a custom Docker container, providing control over system dependencies required for native module compilation.
 - For Vercel, the `/tmp` directory is the only writable location. The code now detects environment and uses appropriate paths.
+
+# Vercel Blob Storage Implementation
+
+This document tracks the progress of implementing Vercel Blob Storage for persistent file storage in the app generator.
+
+## Background
+The current app generator creates static files in the local filesystem. This works in development but causes issues in production where serverless functions have ephemeral filesystems.
+
+## Implementation Steps
+
+- [x] Install Vercel Blob Storage package
+- [x] Create BlobStorage service for file operations
+- [x] Update environment variables for Blob Storage
+- [x] Create database model for generated apps
+- [x] Create database migration for the generated_apps table
+- [x] Add migration runner for executing SQL migrations
+- [x] Update API endpoints to serve files from Blob Storage
+- [x] Create cleanup API for old app files
+- [x] Update app generator to use Blob Storage in production
+- [x] Create documentation for the implementation
+- [x] Create test script for Vercel Blob Storage functionality
+
+## Future Enhancements
+
+- [ ] Add pagination for app listing API
+- [ ] Add user authentication for app ownership
+- [ ] Implement caching for frequently accessed files
+- [ ] Support for automatic deployments to Vercel
+
+## Technical Details
+
+### Storage Flow
+
+1. App is generated and built locally (even in production, but in the /tmp directory)
+2. In production, files are uploaded to Vercel Blob Storage
+3. File URLs are stored in the database
+4. Files are served from Blob Storage in production or local filesystem in development
+
+### Database Schema
+
+The implementation uses a PostgreSQL database with the following schema:
+
+```sql
+CREATE TABLE IF NOT EXISTS generated_apps (
+  id TEXT PRIMARY KEY,
+  prompt TEXT NOT NULL,
+  template TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  public_url TEXT NOT NULL,
+  status TEXT NOT NULL,
+  dependencies JSONB NOT NULL DEFAULT '[]',
+  error TEXT
+);
+```
+
+### API Endpoints
+
+- `GET /api/files/[name]` - Get directory listing or file content
+- `POST /api/cleanup` - Clean up old app files
+
+### Environment Variables
+
+- `BLOB_READ_WRITE_TOKEN` - Required for Vercel Blob Storage
+- `APP_STORAGE_PATH` - Optional path for app source files
+- `STATIC_BUILDS_PATH` - Optional path for built app files
+
+### Testing
+
+- A test script (`test-blob.js`) is provided to verify Blob Storage functionality
+- The script tests the basic operations: upload, list, and delete
+- Run it with `node test-blob.js` after setting up the `BLOB_READ_WRITE_TOKEN` in your environment variables
