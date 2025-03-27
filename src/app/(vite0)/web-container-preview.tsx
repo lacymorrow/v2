@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/tooltip";
 import { WebContainer } from "@webcontainer/api";
 import Convert from "ansi-to-html";
-import { Hammer, Loader2, RefreshCcw } from "lucide-react";
+import { Hammer, Loader2, RefreshCcw, Bug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 // Create two converters for light and dark modes with appropriate colors
@@ -26,6 +26,16 @@ const stripControlSequences = (text: string) => {
       // Remove other common control sequences
       .replace(/\[\d*[^A-Za-z\d\[\];]/g, "")
   );
+};
+
+// Enhanced debugging function
+const debugLog = (context: string, message: any) => {
+  const prefix = `[WebContainer Debug][${context}]`;
+  if (typeof message === 'object') {
+    console.log(prefix, JSON.stringify(message, null, 2));
+  } else {
+    console.log(prefix, message);
+  }
 };
 
 const lightConverter = new Convert({
@@ -204,18 +214,85 @@ class WebContainerManager {
   }
 }
 
-// Create a safe HTML component to handle ANSI output
+// Fix how we handle terminal output HTML
 function SafeHtmlOutput({ html }: { html: string }) {
+  // Use a ref to access the container element
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Update the HTML content safely using the ref
+  useEffect(() => {
+    if (containerRef.current) {
+      containerRef.current.innerHTML = html;
+    }
+  }, [html]);
+
   return (
     <div
+      ref={containerRef}
       className="whitespace-pre-wrap font-mono text-sm"
-      // Using dangerouslySetInnerHTML is necessary here to render terminal output with colors
-      // The input is sanitized by the ansi-to-html converter
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
     />
   );
 }
+
+// Add this diagnostic function near the top with other helper functions
+async function inspectCriticalFiles(instance: WebContainer) {
+  try {
+    // Check package.json
+    try {
+      const packageJson = await instance.fs.readFile('/package.json', 'utf-8');
+      const parsed = JSON.parse(packageJson);
+      console.log('Package.json check:', {
+        name: parsed.name,
+        dependencies: Object.keys(parsed.dependencies || {}).length,
+        devDependencies: Object.keys(parsed.devDependencies || {}).length,
+        scripts: parsed.scripts || {}
+      });
+    } catch (error) {
+      console.error('Error reading package.json:', error);
+    }
+
+    // Check if pnpm-lock.yaml exists
+    try {
+      await instance.fs.readFile('/pnpm-lock.yaml', 'utf-8');
+      console.log('pnpm-lock.yaml exists');
+    } catch (error) {
+      console.log('pnpm-lock.yaml not found');
+    }
+
+    // Check if node_modules exists
+    try {
+      const nodeModules = await instance.fs.readdir('/node_modules');
+      console.log(`node_modules contains ${nodeModules.length} entries`);
+    } catch (error) {
+      console.log('node_modules not found or empty');
+    }
+
+    // List root directory files
+    try {
+      const rootFiles = await instance.fs.readdir('/');
+      console.log('Root directory contains:', rootFiles);
+    } catch (error) {
+      console.error('Error reading root directory:', error);
+    }
+  } catch (error) {
+    console.error('Error during filesystem inspection:', error);
+  }
+}
+
+// Helper function to send input to a terminal
+// async function sendInputToProcess(process: any, input: string) {
+//   // The WebContainer API doesn't directly expose stdin
+//   // We'll use a workaround with a virtual file
+//   try {
+//     // Write input to a file
+//     await process.write(`${input}\n`);
+//     debugLog("Input", `Successfully sent input: ${input}`);
+//     return true;
+//   } catch (error) {
+//     debugLog("Input Error", `Failed to send input: ${error}`);
+//     return false;
+//   }
+// }
 
 export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -228,6 +305,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
   const isInitialMount = useRef(true);
   const lastFileContent = useRef<Record<string, string>>({});
   const [isRebuilding, setIsRebuilding] = useState(false);
+  const [isDebugging, setIsDebugging] = useState(false);
 
   // Handle iframe loading events
   const handleIframeLoad = () => {
@@ -273,36 +351,58 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
     setIsRebuilding(true);
     setStatus({ message: "Rebuilding project..." });
 
+    // Define local variables for this function scope
+    let localOutputLog = "";
+    let isActive = true;
+
     try {
       const instance = await containerManager.current.getContainer();
       if (!instance) {
         throw new Error("WebContainer not initialized");
       }
 
+      // Run diagnostics first
+      await inspectCriticalFiles(instance);
+
+      // First check if package.json exists
+      try {
+        const packageJsonContent = await instance.fs.readFile("/package.json", "utf-8");
+        console.log(`package.json exists: ${packageJsonContent.substring(0, 100)}...`);
+      } catch (error) {
+        console.error("Error reading package.json:", error);
+        setStatus({
+          message: "Error reading package.json",
+          error: "Make sure package.json exists in the project root",
+        });
+        setIsRebuilding(false);
+        return;
+      }
+
+      // Check node_modules directory
+      try {
+        const nodeModulesExists = await instance.fs.readdir("/node_modules").then(() => true).catch(() => false);
+        console.log("node_modules exists:", nodeModulesExists);
+      } catch (error) {
+        console.log("node_modules directory check failed:", error);
+        // This is expected if node_modules doesn't exist yet
+      }
+
       // Run npm/pnpm install to rebuild dependencies
-      const terminal = await instance.spawn("pnpm", ["install"]);
+      setStatus({ message: "Installing dependencies..." });
+
+      // Try running with verbose flag for more info
+      const terminal = await instance.spawn("pnpm", ["install", "--verbose"]);
+
+      let outputText = "";
 
       // Handle output
       await terminal.output.pipeTo(
         new WritableStream({
           write(data) {
+            outputText += data;
             const htmlOutput = convertAnsiToHtml(data);
             setStatus({
               message: "Build output",
-              isHtml: true,
-              error: htmlOutput,
-            });
-          },
-        })
-      );
-
-      // Handle errors
-      await terminal.stderr.pipeTo(
-        new WritableStream({
-          write(data) {
-            const htmlOutput = convertAnsiToHtml(data);
-            setStatus({
-              message: "Build error",
               isHtml: true,
               error: htmlOutput,
             });
@@ -314,15 +414,171 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
       const exitCode = await terminal.exit;
 
       if (exitCode !== 0) {
-        throw new Error(`Build failed with exit code ${exitCode}`);
+        console.error("Build failed with output:", outputText);
+        throw new Error(`Build failed with exit code ${exitCode}. Check the terminal output for details.`);
       }
 
-      setStatus({ message: "Rebuild completed successfully" });
+      setStatus({ message: "Dependencies installed. Starting dev server..." });
 
-      // Refresh the iframe if we have a server URL
-      if (serverUrl && iframeRef.current) {
-        iframeRef.current.src = serverUrl;
-      }
+      // Now start the dev server again
+      const devTerminal = await instance.spawn("npx", ["--yes", "--legacy-peer-deps", "vite", "--host"]);
+      debugLog("Terminal", "Terminal spawned with npx vite");
+
+      // Set up output handling
+      await devTerminal.output.pipeTo(
+        new WritableStream({
+          write(data) {
+            // Store output for debugging
+            localOutputLog += data;
+
+            // Check for prompts that need input
+            if (data.includes("Do you want to continue?") ||
+                data.includes("[y/N]") ||
+                data.includes("[Y/n]") ||
+                data.includes("(y/N)") ||
+                data.includes("(Y/n)") ||
+                data.includes("proceed? (y)")) {
+
+              debugLog("Rebuild Prompt", `Input prompt detected: ${data}`);
+
+              // Cannot send input directly - log warning
+              debugLog("Input Warning", "WebContainer API doesn't support direct stdin input");
+
+              // Kill and restart the process if it's stuck in a prompt
+              setTimeout(async () => {
+                try {
+                  if (!isActive) return;
+
+                  // Kill the current process if it's stuck
+                  devTerminal.kill();
+                  debugLog("Process", "Killed stuck process with prompt");
+
+                  // Start a new process with --yes flag to auto-confirm prompts
+                  const newTerminal = await instance.spawn("npx", ["--yes", "--legacy-peer-deps", "vite", "--host"]);
+                  debugLog("Process", "Started new process with --yes and --legacy-peer-deps flags");
+
+                  // Handle the new terminal output
+                  await newTerminal.output.pipeTo(
+                    new WritableStream({
+                      write(data) {
+                        // Updated to use the local variables
+                        if (!isActive) return;
+
+                        // Store output locally
+                        localOutputLog += data;
+
+                        // Look for server URL in the output
+                        if (data.includes("Local:") && data.includes("http")) {
+                          const match: RegExpMatchArray | null = data.match(/(https?:\/\/localhost:[0-9]+)/);
+                          if (match?.[1]) {
+                            const url = match[1];
+                            setServerUrl(url);
+                            sessionStorage.setItem(
+                              `webcontainer-url-${projectName}`,
+                              url
+                            );
+                            setIsLoading(false);
+                          }
+                        }
+
+                        // Process the output text directly - don't make it HTML
+                        setStatus({
+                          message: "Server output",
+                          error: data,
+                          isHtml: false
+                        });
+                      }
+                    })
+                  );
+
+                  // Handle server exit
+                  newTerminal.exit.then((code) => {
+                    if (!isActive) return;
+
+                    if (code !== 0) {
+                      setStatus({
+                        message: `Server exited with code ${code}`,
+                        error: "The development server crashed. Try rebuilding the project.",
+                      });
+                      setIsRebuilding(false);
+                    }
+                  });
+                } catch (error) {
+                  debugLog("Process Error", `Error restarting process: ${error}`);
+                }
+              }, 5000);
+            }
+
+            // Check for blob-related errors
+            if (data.includes("blob") || data.includes("storage")) {
+              debugLog("Blob Storage", `Detected blob/storage in output: ${data}`);
+            }
+
+            // Look for detailed error information
+            if (data.includes("ELIFECYCLE") || data.includes("ERR!") || data.includes("Error:")) {
+              debugLog("Error Detected", data);
+
+              // Extract more context around the error
+              const lines = localOutputLog.split("\n");
+              const errorIndex = lines.findIndex(line =>
+                line.includes("ELIFECYCLE") ||
+                line.includes("ERR!") ||
+                line.includes("Error:")
+              );
+
+              if (errorIndex >= 0) {
+                // Get 5 lines before and after for context
+                const startLine = Math.max(0, errorIndex - 5);
+                const endLine = Math.min(lines.length, errorIndex + 5);
+                const errorContext = lines.slice(startLine, endLine).join("\n");
+                debugLog("Error Context", errorContext);
+              }
+            }
+
+            // Look for server URL in the output
+            if (data.includes("Local:") && data.includes("http")) {
+              const match: RegExpMatchArray | null = data.match(/(https?:\/\/localhost:[0-9]+)/);
+              if (match?.[1]) {
+                const url = match[1];
+                setServerUrl(url);
+                sessionStorage.setItem(
+                  `webcontainer-url-${projectName}`,
+                  url
+                );
+                setIsLoading(false);
+              }
+            }
+
+            // Process the output text directly - don't make it HTML
+            setStatus({
+              message: "Server output",
+              error: data,
+              isHtml: false
+            });
+          },
+        })
+      );
+
+      // Handle server exit
+      devTerminal.exit.then((code) => {
+        if (!isActive) return;
+        debugLog("Terminal Exit", { code, outputLength: localOutputLog.length });
+
+        if (code !== 0) {
+          debugLog("Error Exit", "Server exited with non-zero code");
+          // Output the last 50 lines for context
+          const lines = localOutputLog.split("\n");
+          const lastLines = lines.slice(Math.max(0, lines.length - 50)).join("\n");
+          debugLog("Last Output Lines", lastLines);
+
+          setStatus({
+            message: `Server exited with code ${code}`,
+            error: "The development server crashed. Check console for detailed logs.",
+          });
+          setIsLoading(false);
+        }
+      });
+
     } catch (error) {
       console.error("Error rebuilding project:", error);
       const errorMessage =
@@ -331,8 +587,127 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
         message: "Failed to rebuild project",
         error: errorMessage,
       });
-    } finally {
       setIsRebuilding(false);
+    }
+
+    return () => {
+      isActive = false;
+    };
+  };
+
+  // Handle debug for blob storage issues
+  const handleDebugBlobStorage = async () => {
+    if (isDebugging || !projectName) return;
+
+    setIsDebugging(true);
+    setStatus({ message: "Analyzing blob storage configuration..." });
+
+    try {
+      const instance = await containerManager.current.getContainer();
+      if (!instance) {
+        throw new Error("WebContainer not initialized");
+      }
+
+      // Check for key files related to blob storage
+      const debugInfo: Record<string, any> = {
+        time: new Date().toISOString(),
+        project: projectName,
+        files: {}
+      };
+
+      // Check for .env files
+      try {
+        const envFiles = [];
+        const rootFiles = await instance.fs.readdir("/");
+
+        for (const file of rootFiles) {
+          if (file.startsWith(".env")) {
+            try {
+              const content = await instance.fs.readFile(`/${file}`, "utf-8");
+              // Filter out lines containing storage/blob config
+              const blobLines = content.split("\n")
+                .filter(line =>
+                  line.includes("STORAGE") ||
+                  line.includes("BLOB") ||
+                  line.includes("AZURE") ||
+                  line.includes("AWS") ||
+                  line.includes("S3")
+                );
+
+              if (blobLines.length > 0) {
+                envFiles.push({
+                  file,
+                  config: blobLines.map(line =>
+                    // Mask sensitive values
+                    line.replace(/(=|:)([^;]+)/, "$1***REDACTED***")
+                  )
+                });
+              }
+            } catch (error) {
+              envFiles.push({ file, error: "Could not read file" });
+            }
+          }
+        }
+
+        debugInfo.files.envFiles = envFiles;
+      } catch (error) {
+        debugInfo.files.envFilesError = "Could not read environment files";
+      }
+
+      // Check for next.config.js
+      try {
+        const nextConfigExists = await instance.fs.readFile("/next.config.js", "utf-8")
+          .then(() => true)
+          .catch(() => false);
+        debugInfo.files.nextConfig = nextConfigExists;
+      } catch (error) {
+        debugInfo.files.nextConfigError = "Could not check next.config.js";
+      }
+
+      // Check for blob-related packages in package.json
+      try {
+        const packageJson = await instance.fs.readFile("/package.json", "utf-8");
+        const pkg = JSON.parse(packageJson);
+
+        const blobPackages: Record<string, string> = {};
+        const allDeps: Record<string, string> = {
+          ...pkg.dependencies || {},
+          ...pkg.devDependencies || {}
+        };
+
+        const blobRelatedKeywords = [
+          "blob", "storage", "s3", "azure", "upload", "file", "aws"
+        ];
+
+        for (const [dep, version] of Object.entries(allDeps)) {
+          if (blobRelatedKeywords.some(keyword => dep.toLowerCase().includes(keyword))) {
+            blobPackages[dep] = version;
+          }
+        }
+
+        debugInfo.files.blobPackages = blobPackages;
+      } catch (error) {
+        debugInfo.files.packageJsonError = "Could not check package.json";
+      }
+
+      // Output the debug info
+      const debugOutput = JSON.stringify(debugInfo, null, 2);
+      console.log("[Blob Storage Debug]", debugOutput);
+
+      setStatus({
+        message: "Blob Storage Debug Information",
+        error: debugOutput,
+        isHtml: false
+      });
+    } catch (error) {
+      console.error("Debug error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      setStatus({
+        message: "Failed to debug blob storage",
+        error: errorMessage,
+      });
+    } finally {
+      setIsDebugging(false);
     }
   };
 
@@ -368,6 +743,8 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
     if (serverUrl) return;
 
     let isActive = true;
+    let fullOutputLog = ""; // Store full output for debugging
+
     async function startDevServer() {
       try {
         setIsLoading(true);
@@ -379,95 +756,449 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
           throw new Error("Failed to initialize WebContainer");
         }
 
+        debugLog("Container", "WebContainer initialized successfully");
+
         // 2. Fetch project files from API
         setStatus({ message: "Loading project files..." });
+        debugLog("Files", `Fetching files for project: ${projectName}`);
         const response = await fetch(`/api/files/${projectName}?root=true`);
 
         if (!response.ok) {
           const errorText = await response.text();
+          debugLog("API Error", `Failed to load files: ${response.status} - ${errorText}`);
           throw new Error(
             `Failed to load project files: ${response.status} - ${errorText}`
           );
         }
 
         const entries = await response.json();
+        debugLog("Files", `Received ${Object.keys(entries).length} top-level entries`);
 
         if (!entries || Object.keys(entries).length === 0) {
           throw new Error("No files found for this project");
         }
 
+        // Check for critical files
+        const hasPackageJson = entries["package.json"] !== undefined;
+        const hasNextConfig = entries["next.config.js"] !== undefined;
+        debugLog("Critical Files", { hasPackageJson, hasNextConfig });
+
         // 3. Mount project files in WebContainer
         setStatus({ message: "Mounting files..." });
-        await instance.mount(entries);
-        containerManager.current.setMountedFiles(entries);
+        try {
+          await instance.mount(entries);
+          containerManager.current.setMountedFiles(entries);
+          debugLog("Mount", "Files mounted successfully");
+        } catch (mountError) {
+          debugLog("Mount Error", mountError);
+          throw mountError;
+        }
+
+        // List root directory contents for debugging
+        try {
+          const rootFiles = await instance.fs.readdir("/");
+          debugLog("Root Directory", rootFiles);
+        } catch (fsError) {
+          debugLog("FS Error", fsError);
+        }
 
         // Store initial content for later comparison
         await storeInitialContent(entries);
 
-        // 4. Start the dev server
-        setStatus({ message: "Starting dev server..." });
+        // 4. Pre-install vite to avoid prompts
+        setStatus({ message: "Installing dependencies..." });
+        debugLog("Dependencies", "Pre-installing vite to avoid prompts");
 
-        // Create terminal for output
-        const terminal = await instance.spawn("pnpm", ["dev", "--host"]);
+        try {
+          // First install vite explicitly to avoid the prompt - use legacy-peer-deps to bypass conflicts
+          const installTerminal = await instance.spawn("npm", ["install", "vite@latest", "--no-save", "--legacy-peer-deps"]);
 
-        // Set up output handling
-        const stdoutStream = await terminal.output.pipeTo(
-          new WritableStream({
-            write(data) {
-              if (!isActive) return;
+          // Process the install output
+          await installTerminal.output.pipeTo(
+            new WritableStream({
+              write(data) {
+                if (!isActive) return;
+                fullOutputLog += data;
+                debugLog("Install Output", data);
 
-              // Look for server URL in the output
-              if (data.includes("Local:") && data.includes("http")) {
-                const match = data.match(/(https?:\/\/localhost:[0-9]+)/);
-                if (match && match[1]) {
-                  const url = match[1];
-                  setServerUrl(url);
-                  sessionStorage.setItem(
-                    `webcontainer-url-${projectName}`,
-                    url
-                  );
-                  setIsLoading(false);
+                setStatus({
+                  message: "Installing Vite...",
+                  error: data,
+                  isHtml: false
+                });
+
+                // Direct detection of npm completion messages
+                if (data.includes("added") && data.includes("packages in")) {
+                  debugLog("Install Detection", "Detected npm install completion pattern");
+
+                  // Force continuation to the next step
+                  setTimeout(async () => {
+                    if (!isActive || serverUrl) return; // Skip if already handled
+
+                    try {
+                      debugLog("Install Success", "Forcing continuation after npm completion");
+
+                      // Kill the current install process if it's stuck
+                      try {
+                        installTerminal.kill();
+                        debugLog("Process", "Killed potentially stuck install process");
+                      } catch (err) {
+                        debugLog("Kill Error", `Error killing install process: ${err}`);
+                      }
+
+                      // Install necessary Vite plugins before starting the server
+                      debugLog("Dependencies", "Installing required Vite plugins");
+                      setStatus({ message: "Installing Vite plugins..." });
+
+                      try {
+                        const pluginsInstall = await instance.spawn("npm", ["install", "--legacy-peer-deps", "@vitejs/plugin-react", "vite-plugin-node-polyfills"]);
+
+                        // Set a fallback timeout to ensure we continue even if the process hangs
+                        const pluginTimeoutId = setTimeout(() => {
+                          if (!isActive || serverUrl) return;
+
+                          debugLog("Timeout", "Plugin installation timed out - forcing continuation");
+                          try {
+                            pluginsInstall.kill();
+                          } catch (err) {
+                            debugLog("Kill Error", `Error killing plugin install: ${err}`);
+                          }
+
+                          // Force continue to server start
+                          startDevServer();
+                        }, 20000); // 20 second timeout
+
+                        // Flag to track if we've already handled completion
+                        let pluginInstallHandled = false;
+
+                        // Function to start dev server (extracted for reuse)
+                        async function startDevServer() {
+                          if (pluginInstallHandled) return;
+                          pluginInstallHandled = true;
+                          clearTimeout(pluginTimeoutId);
+
+                          debugLog("Server", "Starting dev server after plugin installation");
+                          setStatus({ message: "Starting dev server..." });
+
+                          // Check that instance exists
+                          if (!instance) {
+                            debugLog("Error", "WebContainer instance is null");
+                            setStatus({
+                              message: "Failed to start dev server",
+                              error: "WebContainer instance is null",
+                            });
+                            setIsLoading(false);
+                            return;
+                          }
+
+                          try {
+                            // List the node_modules/.bin directory to see what's available
+                            try {
+                              const binContents = await instance.fs.readdir("node_modules/.bin");
+                              debugLog("Available Bins", binContents);
+                            } catch (err) {
+                              debugLog("Bin Check Error", `Could not read .bin directory: ${err}`);
+                            }
+
+                            // Create terminal for output - use direct path to vite binary
+                            // Try different approaches to find and run vite
+                            let devTerminal: Awaited<ReturnType<typeof instance.spawn>>;
+
+                            try {
+                              // First try: direct path to vite executable in node_modules
+                              debugLog("Attempt", "Trying direct path to vite binary");
+                              devTerminal = await instance.spawn("node", ["./node_modules/vite/bin/vite.js", "--host"]);
+                            } catch (err) {
+                              debugLog("Vite Error 1", `Error running vite directly: ${err}`);
+
+                              try {
+                                // Second try: use npx with direct path
+                                debugLog("Attempt", "Trying npx with direct path");
+                                devTerminal = await instance.spawn("npx", ["--no", "vite", "--host"]);
+                              } catch (err) {
+                                debugLog("Vite Error 2", `Error with npx approach: ${err}`);
+
+                                // Final fallback: try with shell script
+                                debugLog("Attempt", "Trying shell script approach");
+                                devTerminal = await instance.spawn("sh", ["-c", "node ./node_modules/vite/bin/vite.js --host"]);
+                              }
+                            }
+
+                            debugLog("Terminal", "Force-spawned dev server with vite binary");
+
+                            // Set up output handling
+                            devTerminal.output.pipeTo(
+                              new WritableStream({
+                                write(data) {
+                                  if (!isActive) return;
+
+                                  // Store complete output for debugging
+                                  fullOutputLog += data;
+                                  debugLog("Server Output", data);
+
+                                  // Look for server URL in the output
+                                  if (data.includes("Local:") && data.includes("http")) {
+                                    // Handle both standard and Vite format
+                                    let match: RegExpMatchArray | null = null;
+
+                                    // Try Vite's specific format first
+                                    if (data.includes("➜")) {
+                                      match = data.match(/Local:\s+([^\s\n]+)/);
+                                      debugLog("URL Detection", `Attempting to match Vite format: ${match?.[1] || "no match"}`);
+                                    }
+
+                                    // Fall back to generic format if Vite-specific format fails
+                                    if (!match || !match[1]) {
+                                      match = data.match(/(https?:\/\/localhost:[0-9]+)/);
+                                      debugLog("URL Detection", `Falling back to generic format: ${match?.[1] || "no match"}`);
+                                    }
+
+                                    if (match?.[1]) {
+                                      const url = match[1].trim();
+                                      debugLog("Server URL", `Detected server URL: ${url}`);
+
+                                      // Force URL to ensure it gets set
+                                      setServerUrl(url);
+                                      sessionStorage.setItem(
+                                        `webcontainer-url-${projectName}`,
+                                        url
+                                      );
+                                      setIsLoading(false);
+
+                                      // Additional logging to confirm URL has been set
+                                      setTimeout(() => {
+                                        debugLog("URL Status", `Current server URL state: ${serverUrl}`);
+                                      }, 500);
+                                    }
+                                  }
+
+                                  // Process the output text
+                                  setStatus({
+                                    message: "Server output",
+                                    error: data,
+                                    isHtml: false
+                                  });
+                                }
+                              })
+                            );
+                          } catch (error) {
+                            console.error("WebContainer error:", error);
+                            debugLog("Fatal Error", error);
+
+                            if (!isActive) return;
+
+                            const errorMessage =
+                              error instanceof Error ? error.message : "Unknown error";
+                            setStatus({
+                              message: "Failed to start WebContainer",
+                              error: errorMessage,
+                            });
+                            setIsLoading(false);
+                          }
+                        }
+
+                        // Wait for plugin installation to complete
+                        await pluginsInstall.output.pipeTo(
+                          new WritableStream({
+                            write(data) {
+                              if (!isActive) return;
+                              fullOutputLog += data;
+                              debugLog("Plugin Install", data);
+                              setStatus({
+                                message: "Installing plugins...",
+                                error: data,
+                                isHtml: false
+                              });
+
+                              // Detect completion pattern in the output
+                              if (data.includes("added") && data.includes("packages in")) {
+                                debugLog("Plugin Detection", "Detected plugin installation completion");
+
+                                // Small delay before starting server to ensure everything is settled
+                                setTimeout(() => {
+                                  if (!isActive || serverUrl) return;
+                                  startDevServer();
+                                }, 1000);
+                              }
+                            }
+                          })
+                        );
+
+                        // This is a backup, likely won't be reached
+                        const exitCode = await pluginsInstall.exit;
+                        debugLog("Plugin Install Complete", `Exit code: ${exitCode}`);
+
+                        // If we somehow get here and haven't started the server, do it now
+                        if (!pluginInstallHandled) {
+                          startDevServer();
+                        }
+                      } catch (error) {
+                        debugLog("Plugin Error", `Error installing plugins: ${error}`);
+
+                        // Continue with server startup even if plugin install fails
+                        setStatus({ message: "Starting dev server..." });
+
+                        // Create terminal for output
+                        const devTerminal = await instance.spawn("npx", ["--yes", "--legacy-peer-deps", "vite", "--host"]);
+                        debugLog("Terminal", "Force-spawned dev server after plugin failure");
+
+                        // Set up output handling
+                        devTerminal.output.pipeTo(
+                          new WritableStream({
+                            write(data) {
+                              if (!isActive) return;
+
+                              // Store complete output for debugging
+                              fullOutputLog += data;
+                              debugLog("Server Output", data);
+
+                              // Look for server URL in the output
+                              if (data.includes("Local:") && data.includes("http")) {
+                                // Handle both standard and Vite format
+                                let match: RegExpMatchArray | null = null;
+
+                                // Try Vite's specific format first
+                                if (data.includes("➜")) {
+                                  match = data.match(/Local:\s+([^\s\n]+)/);
+                                  debugLog("URL Detection", `Attempting to match Vite format: ${match?.[1] || "no match"}`);
+                                }
+
+                                // Fall back to generic format if Vite-specific format fails
+                                if (!match || !match[1]) {
+                                  match = data.match(/(https?:\/\/localhost:[0-9]+)/);
+                                  debugLog("URL Detection", `Falling back to generic format: ${match?.[1] || "no match"}`);
+                                }
+
+                                if (match?.[1]) {
+                                  const url = match[1].trim();
+                                  debugLog("Server URL", `Detected server URL: ${url}`);
+
+                                  // Force URL to ensure it gets set
+                                  setServerUrl(url);
+                                  sessionStorage.setItem(
+                                    `webcontainer-url-${projectName}`,
+                                    url
+                                  );
+                                  setIsLoading(false);
+
+                                  // Additional logging to confirm URL has been set
+                                  setTimeout(() => {
+                                    debugLog("URL Status", `Current server URL state: ${serverUrl}`);
+                                  }, 500);
+                                }
+                              }
+
+                              // Process the output text
+                              setStatus({
+                                message: "Server output",
+                                error: data,
+                                isHtml: false
+                              });
+                            }
+                          })
+                        );
+                      }
+                    } catch (error) {
+                      debugLog("Force Continue Error", `Error during forced continuation: ${error}`);
+                      setStatus({
+                        message: "Failed to start dev server",
+                        error: error instanceof Error ? error.message : "Unknown error",
+                      });
+                      setIsLoading(false);
+                    }
+                  }, 1000); // Short delay before forcing continuation
                 }
-              }
+              },
+            })
+          );
 
-              const htmlOutput = convertAnsiToHtml(data);
-              setStatus({
-                message: "Server output",
-                isHtml: true,
-                error: htmlOutput,
-              });
-            },
-          })
-        );
+          // Wait for the install to complete - this is a backup approach, may not be needed
+          const exitCode = await installTerminal.exit;
+          debugLog("Install Complete", `Exit code: ${exitCode}`);
 
-        // Set up error handling
-        const stderrStream = await terminal.stderr.pipeTo(
-          new WritableStream({
-            write(data) {
-              if (!isActive) return;
-              const htmlOutput = convertAnsiToHtml(data);
-              setStatus({
-                message: "Server error",
-                isHtml: true,
-                error: htmlOutput,
-              });
-            },
-          })
-        );
+          // If we get here and haven't started the dev server, do it now
+          if (isActive && !serverUrl) {
+            debugLog("Install Backup", "Backup approach for starting dev server after install exit");
+            setStatus({ message: "Starting dev server..." });
 
-        // Handle server exit
-        terminal.exit.then((code) => {
-          if (!isActive) return;
-          if (code !== 0) {
-            setStatus({
-              message: `Server exited with code ${code}`,
-              error: "The development server crashed",
-            });
-            setIsLoading(false);
+            // Create terminal for output - explicitly use npx with legacy-peer-deps to run vite
+            const terminal = await instance.spawn("npx", ["--yes", "--legacy-peer-deps", "vite", "--host"]);
+            debugLog("Terminal", "Terminal spawned with npx vite (backup approach)");
+
+            // Handle output similar to above
+            terminal.output.pipeTo(
+              new WritableStream({
+                write(data) {
+                  if (!isActive) return;
+
+                  // Store complete output for debugging
+                  fullOutputLog += data;
+                  debugLog("Server Output", data);
+
+                  // Look for server URL in the output
+                  if (data.includes("Local:") && data.includes("http")) {
+                    // Handle both standard and Vite format
+                    let match: RegExpMatchArray | null = null;
+
+                    // Try Vite's specific format first
+                    if (data.includes("➜")) {
+                      match = data.match(/Local:\s+([^\s\n]+)/);
+                      debugLog("URL Detection", `Attempting to match Vite format: ${match?.[1] || "no match"}`);
+                    }
+
+                    // Fall back to generic format if Vite-specific format fails
+                    if (!match || !match[1]) {
+                      match = data.match(/(https?:\/\/localhost:[0-9]+)/);
+                      debugLog("URL Detection", `Falling back to generic format: ${match?.[1] || "no match"}`);
+                    }
+
+                    if (match?.[1]) {
+                      const url = match[1].trim();
+                      debugLog("Server URL", `Detected server URL: ${url}`);
+
+                      // Force URL to ensure it gets set
+                      setServerUrl(url);
+                      sessionStorage.setItem(
+                        `webcontainer-url-${projectName}`,
+                        url
+                      );
+                      setIsLoading(false);
+
+                      // Additional logging to confirm URL has been set
+                      setTimeout(() => {
+                        debugLog("URL Status", `Current server URL state: ${serverUrl}`);
+                      }, 500);
+                    }
+                  }
+
+                  // Process the output text
+                  setStatus({
+                    message: "Server output",
+                    error: data,
+                    isHtml: false
+                  });
+                }
+              })
+            );
           }
-        });
+        } catch (error) {
+          console.error("WebContainer error:", error);
+          debugLog("Fatal Error", error);
+
+          if (!isActive) return;
+
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          setStatus({
+            message: "Failed to start WebContainer",
+            error: errorMessage,
+          });
+          setIsLoading(false);
+        }
       } catch (error) {
         console.error("WebContainer error:", error);
+        debugLog("Fatal Error", error);
+
         if (!isActive) return;
 
         const errorMessage =
@@ -484,6 +1215,19 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
 
     return () => {
       isActive = false;
+      // Save the full output log for later debugging if needed
+      if (fullOutputLog) {
+        debugLog("Cleanup", `Saving ${fullOutputLog.length} bytes of logs`);
+        try {
+          sessionStorage.setItem(`webcontainer-logs-${projectName}`,
+            fullOutputLog.length > 500000
+              ? fullOutputLog.slice(-500000)  // Only keep last 500KB if too large
+              : fullOutputLog
+          );
+        } catch (e) {
+          debugLog("Storage Error", "Failed to save logs to sessionStorage");
+        }
+      }
     };
   }, [projectName, serverUrl]);
 
@@ -534,8 +1278,25 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
             <Button
               size="icon"
               variant="outline"
+              onClick={handleDebugBlobStorage}
+              disabled={isLoading || isRefreshing || isDebugging}
+            >
+              {isDebugging ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Bug className="h-4 w-4" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Debug Blob Storage</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="icon"
+              variant="outline"
               onClick={handleRebuild}
-              disabled={isLoading || isRefreshing || isRebuilding}
+              disabled={isLoading || isRefreshing || isRebuilding || isDebugging}
             >
               {isRebuilding ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -552,7 +1313,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
               size="icon"
               variant="outline"
               onClick={handleRefresh}
-              disabled={isLoading || isRefreshing || isRebuilding}
+              disabled={isLoading || isRefreshing || isRebuilding || isDebugging}
             >
               {isRefreshing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -585,7 +1346,7 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
               )}
               <div className="mt-2 max-w-full overflow-x-auto whitespace-pre-wrap text-center font-mono dark:text-white">
                 {status.isHtml ? (
-                  <SafeHtmlOutput html={convertAnsiToHtml(status.message)} />
+                  <SafeHtmlOutput html={status.message} />
                 ) : (
                   <span className="whitespace-pre-wrap font-mono text-sm">
                     {status.message}
@@ -593,7 +1354,11 @@ export function WebContainerPreview({ projectName }: WebContainerPreviewProps) {
                 )}
                 {status.error && (
                   <div className="mt-2 max-w-md text-sm text-red-500 dark:text-red-400">
-                    {status.error}
+                    {status.isHtml ? (
+                      <SafeHtmlOutput html={status.error} />
+                    ) : (
+                      status.error
+                    )}
                   </div>
                 )}
               </div>

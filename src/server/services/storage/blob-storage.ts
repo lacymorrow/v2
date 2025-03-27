@@ -8,9 +8,18 @@ import path from "node:path";
  */
 export class BlobStorage {
     private readonly prefix: string;
+    private readonly isTokenValid: boolean;
 
     constructor(prefix = "generated-apps") {
         this.prefix = prefix;
+        // Check if we have a valid token
+        this.isTokenValid = !!process.env.BLOB_READ_WRITE_TOKEN &&
+            process.env.BLOB_READ_WRITE_TOKEN !== "null" &&
+            process.env.BLOB_READ_WRITE_TOKEN !== "";
+
+        if (!this.isTokenValid) {
+            console.warn("BLOB_READ_WRITE_TOKEN is not set or is invalid. Blob storage operations will be skipped.");
+        }
     }
 
     /**
@@ -21,6 +30,10 @@ export class BlobStorage {
      * @returns URL of the uploaded blob
      */
     async uploadFile(filePath: string, content: string | Buffer, appName: string): Promise<string> {
+        if (!this.isTokenValid) {
+            return `/builds/${appName}/${this.normalizePath(filePath)}`;
+        }
+
         const normalizedPath = this.normalizePath(filePath);
         const blobPath = `${this.prefix}/${appName}/${normalizedPath}`;
 
@@ -53,6 +66,28 @@ export class BlobStorage {
     async uploadDirectory(dirPath: string, appName: string): Promise<Map<string, string>> {
         const results = new Map<string, string>();
 
+        // If no valid token, return local paths
+        if (!this.isTokenValid) {
+            try {
+                const entries = await fs.readdir(dirPath, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (!entry.isDirectory()) {
+                        const localPath = path.join(dirPath, entry.name).split(path.sep).join("/");
+                        const relativePath = localPath.replace(dirPath, "").replace(/^\/+/, "");
+                        results.set(relativePath, `/builds/${appName}/${relativePath}`);
+
+                        // Make sure to set index.html specially
+                        if (entry.name === "index.html") {
+                            results.set("index.html", `/builds/${appName}/index.html`);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`Error creating local file map for ${dirPath}:`, error);
+            }
+            return results;
+        }
+
         try {
             // Check if directory exists
             await fs.access(dirPath);
@@ -75,6 +110,11 @@ export class BlobStorage {
      * @returns Array of blob objects
      */
     async listFiles(appName: string): Promise<Array<{ url: string; pathname: string }>> {
+        if (!this.isTokenValid) {
+            console.warn("Skipping listFiles operation - no valid token");
+            return [];
+        }
+
         try {
             const blobs = await list({
                 prefix: `${this.prefix}/${appName}/`,
@@ -97,6 +137,11 @@ export class BlobStorage {
      * @param appName The app's name
      */
     async deleteApp(appName: string): Promise<void> {
+        if (!this.isTokenValid) {
+            console.warn("Skipping deleteApp operation - no valid token");
+            return;
+        }
+
         try {
             const blobs = await list({
                 prefix: `${this.prefix}/${appName}/`,

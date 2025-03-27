@@ -44,22 +44,22 @@ const _createLogger =
 			};
 
 			// Send server-side logs to your logging service or database
-			void fetch("http://localhost:3000/v1", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(logData),
-			});
+			// void fetch("http://localhost:3000/v1", {
+			// 	method: "POST",
+			// 	headers: { "Content-Type": "application/json" },
+			// 	body: JSON.stringify(logData),
+			// });
 			if (isServer) {
 				console[level](...args);
 
 				// TODO: Implement logging service
 				if (logData?.apiKey) {
-					// Send server-side logs to your logging service or database
-					void fetch("http://localhost:3000/v1", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify(logData),
-					});
+					// // Send server-side logs to your logging service or database
+					// void fetch("http://localhost:3000/v1", {
+					// 	method: "POST",
+					// 	headers: { "Content-Type": "application/json" },
+					// 	body: JSON.stringify(logData),
+					// });
 				}
 			} else {
 				console[level](...args);

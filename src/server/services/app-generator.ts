@@ -111,7 +111,16 @@ export async function generateApp({
 
 	// In production, we'll update this with the blob URL
 	const isProd = process.env.NODE_ENV === 'production';
-	const blobStorage = isProd ? new BlobStorage() : null;
+	let blobStorage = null;
+
+	// Only try to use blob storage if in production and the token exists
+	if (isProd && process.env.BLOB_READ_WRITE_TOKEN &&
+		process.env.BLOB_READ_WRITE_TOKEN !== "null" &&
+		process.env.BLOB_READ_WRITE_TOKEN !== "") {
+		blobStorage = new BlobStorage();
+	} else if (isProd) {
+		console.warn("Running in production mode but BLOB_READ_WRITE_TOKEN is not set. Using local filesystem storage.");
+	}
 
 	const app: GeneratedApp = {
 		id: appId,
@@ -160,13 +169,13 @@ export async function generateApp({
 			console.log('Using cached node_modules');
 			await fs.cp(CACHED_MODULES_PATH, appModulesPath, { recursive: true });
 			// Quick install to ensure everything is linked correctly
-			await execAsync('pnpm install --prefer-offline --no-frozen-lockfile', {
+			await execAsync('pnpm install --prefer-offline --no-frozen-lockfile --no-interactive', {
 				cwd: appPath,
 				env: { ...process.env, NODE_ENV: 'production' },
 			});
 		} else {
 			console.log('No cached node_modules, performing full install');
-			await execAsync('pnpm install --prefer-offline', {
+			await execAsync('pnpm install --prefer-offline --no-interactive', {
 				cwd: appPath,
 				env: { ...process.env, NODE_ENV: 'production' },
 			});

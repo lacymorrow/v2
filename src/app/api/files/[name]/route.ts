@@ -26,7 +26,8 @@ export async function GET(
 	{ params }: { params: { name: string } }
 ) {
 	try {
-		const name = params.name;
+		// Await params before accessing them
+		const { name } = await Promise.resolve(params);
 		const isRoot = request.nextUrl.searchParams.has("root");
 		const filePath = request.nextUrl.searchParams.get("file") || "";
 
