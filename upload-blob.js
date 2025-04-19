@@ -1,7 +1,8 @@
 import { createPool } from '@vercel/postgres';
+import { put, list } from '@vercel/blob';
 import 'dotenv/config';
 import path from 'node:path';
-import { BlobStorage } from './src/server/services/storage/blob-storage';
+import fs from 'node:fs/promises';
 
 const APP_NAME = 'blob-test-app';
 const BUILD_PATH = path.join(process.cwd(), 'public', 'builds', APP_NAME);
@@ -16,11 +17,17 @@ async function uploadToBlob() {
     }
 
     console.log(`Using build directory: ${BUILD_PATH}`);
-    const blobStorage = new BlobStorage('generated-apps');
+    const prefix = 'generated-apps';
 
     // Upload the app to blob storage
     console.log('Starting upload...');
-    const fileMap = await blobStorage.uploadDirectory(BUILD_PATH, APP_NAME);
+    const fileMap = new Map();
+
+    // Check if directory exists
+    await fs.access(BUILD_PATH);
+
+    // Process the directory
+    await processDirectory(BUILD_PATH, APP_NAME, fileMap, "");
 
     console.log(`Upload complete! Uploaded ${fileMap.size} files`);
 
@@ -64,6 +71,57 @@ async function uploadToBlob() {
   } catch (error) {
     console.error('Blob upload failed:', error);
   }
+}
+
+async function processDirectory(dirPath, appName, results, relativePath) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const entryPath = path.join(dirPath, entry.name);
+    const entryRelativePath = relativePath ? path.join(relativePath, entry.name) : entry.name;
+
+    if (entry.isDirectory()) {
+      // Process subdirectory recursively
+      await processDirectory(entryPath, appName, results, entryRelativePath);
+    } else {
+      // Upload file
+      const content = await fs.readFile(entryPath);
+      const normalizedPath = entryRelativePath.split(path.sep).join("/").replace(/^\/+/, "");
+      const blobPath = `generated-apps/${appName}/${normalizedPath}`;
+
+      const contentType = getContentType(normalizedPath);
+
+      const blob = await put(blobPath, content, {
+        contentType,
+        access: "public",
+      });
+
+      results.set(entryRelativePath, blob.url);
+    }
+  }
+}
+
+function getContentType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const contentTypes = {
+    ".html": "text/html",
+    ".css": "text/css",
+    ".js": "application/javascript",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain",
+    ".md": "text/markdown",
+    ".tsx": "text/plain",
+    ".ts": "text/plain",
+    ".jsx": "text/plain",
+  };
+
+  return contentTypes[ext] || "application/octet-stream";
 }
 
 uploadToBlob();

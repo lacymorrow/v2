@@ -33,6 +33,7 @@ export const STATIC_BUILDS_PATH = process.env.NODE_ENV === 'production'
 // Pre-built node_modules path - this should still be in the project directory in both environments
 const TEMPLATE_PATH = path.join(process.cwd(), 'public', 'vite-project');
 const CACHED_MODULES_PATH = path.join(TEMPLATE_PATH, 'node_modules');
+const NODE_MODULES_COPY_TIMEOUT = 60000; // 60 seconds timeout for copying node_modules
 
 // Files to exclude when copying template
 const EXCLUDE_FROM_TEMPLATE = [
@@ -87,6 +88,25 @@ const EXCLUDE_FROM_TEMPLATE = [
 
 function shouldExclude(src: string): boolean {
 	return EXCLUDE_FROM_TEMPLATE.some(pattern => src.includes(pattern));
+}
+
+// Helper function to copy with timeout
+async function copyWithTimeout(src: string, dest: string, options: any, timeoutMs: number): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		const timeoutId = setTimeout(() => {
+			reject(new Error(`Copy operation timed out after ${timeoutMs}ms`));
+		}, timeoutMs);
+
+		fs.cp(src, dest, options)
+			.then(() => {
+				clearTimeout(timeoutId);
+				resolve();
+			})
+			.catch((err) => {
+				clearTimeout(timeoutId);
+				reject(err);
+			});
+	});
 }
 
 export async function generateApp({
@@ -167,17 +187,31 @@ export async function generateApp({
 
 		if (hasCachedModules) {
 			console.log('Using cached node_modules');
-			await fs.cp(CACHED_MODULES_PATH, appModulesPath, { recursive: true });
-			// Quick install to ensure everything is linked correctly
-			await execAsync('pnpm install --prefer-offline --no-frozen-lockfile --no-interactive', {
-				cwd: appPath,
-				env: { ...process.env, NODE_ENV: 'production' },
-			});
+			try {
+				await copyWithTimeout(CACHED_MODULES_PATH, appModulesPath, { recursive: true }, NODE_MODULES_COPY_TIMEOUT);
+				notify("Installing dependencies", 50);
+				// Quick install to ensure everything is linked correctly
+				await execAsync('pnpm install --prefer-offline --no-frozen-lockfile', {
+					cwd: appPath,
+					env: { ...process.env, NODE_ENV: 'production' },
+					timeout: 60000, // 60 second timeout for pnpm install
+				});
+			} catch (error) {
+				console.warn(`Error copying node_modules: ${error instanceof Error ? error.message : String(error)}`);
+				console.log('Falling back to normal install');
+				// If copying fails, fall back to a normal install
+				await execAsync('pnpm install --prefer-offline', {
+					cwd: appPath,
+					env: { ...process.env, NODE_ENV: 'production' },
+					timeout: 120000, // 2 minute timeout for full install
+				});
+			}
 		} else {
 			console.log('No cached node_modules, performing full install');
-			await execAsync('pnpm install --prefer-offline --no-interactive', {
+			await execAsync('pnpm install --prefer-offline', {
 				cwd: appPath,
 				env: { ...process.env, NODE_ENV: 'production' },
+				timeout: 120000, // 2 minute timeout for full install
 			});
 		}
 
