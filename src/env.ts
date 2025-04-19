@@ -63,6 +63,13 @@ export const env = createEnv({
 		VERCEL_CLIENT_ID: z.string().optional(),
 		VERCEL_CLIENT_SECRET: z.string().optional(),
 
+		// Vercel Blob Storage
+		BLOB_READ_WRITE_TOKEN: z.string().optional(),
+
+		// App Generator Paths
+		APP_STORAGE_PATH: z.string().optional(),
+		STATIC_BUILDS_PATH: z.string().optional(),
+
 		// DeepSeek
 		DEEPSEEK_API_KEY: z.string().optional()
 	},
@@ -111,6 +118,9 @@ export const env = createEnv({
 		VERCEL_ACCESS_TOKEN: process.env.VERCEL_ACCESS_TOKEN,
 		VERCEL_CLIENT_ID: process.env.VERCEL_CLIENT_ID,
 		VERCEL_CLIENT_SECRET: process.env.VERCEL_CLIENT_SECRET,
+		BLOB_READ_WRITE_TOKEN: process.env.BLOB_READ_WRITE_TOKEN,
+		APP_STORAGE_PATH: process.env.APP_STORAGE_PATH,
+		STATIC_BUILDS_PATH: process.env.STATIC_BUILDS_PATH,
 		DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
 	},
 	/**

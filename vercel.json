@@ -1,4 +1,28 @@
 {
-	"installCommand": "pnpm install",
-	"buildCommand": "pnpm build"
+  "installCommand": "pnpm install",
+  "buildCommand": "pnpm build",
+  "regions": ["sfo1"],
+  "functions": {
+    "src/app/api/generate/**/*": {
+      "memory": 3008,
+      "maxDuration": 300
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "crons": [
+    {
+      "path": "/api/cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ],
+  "builds": [
+    { "src": "package.json", "use": "@vercel/node" },
+    {
+      "src": "scripts/db-setup.js",
+      "use": "@vercel/node",
+      "config": { "includeFiles": ["src/server/migrations/**"] }
+    }
+  ]
 }

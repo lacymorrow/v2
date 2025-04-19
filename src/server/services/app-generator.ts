@@ -4,6 +4,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { saveGeneratedApp, updateGeneratedAppStatus } from '../models/generated-app';
+import { BlobStorage } from './storage/blob-storage';
 
 const execAsync = promisify(exec);
 
@@ -14,17 +16,24 @@ interface GenerateAppOptions {
 	onProgress?: (step: string, progress: number) => void;
 }
 
-export const APP_STORAGE_PATH = process.env.APP_STORAGE_PATH
-	? path.join(process.cwd(), process.env.APP_STORAGE_PATH)
-	: path.join(process.cwd(), 'public', 'generated-apps');
+// For production (serverless) environments, use /tmp directory which is writable
+// For local development, use the paths within the project
+export const APP_STORAGE_PATH = process.env.NODE_ENV === 'production'
+	? path.join('/tmp', 'generated-apps')
+	: process.env.APP_STORAGE_PATH
+		? path.join(process.cwd(), process.env.APP_STORAGE_PATH)
+		: path.join(process.cwd(), 'public', 'generated-apps');
 
-export const STATIC_BUILDS_PATH = process.env.STATIC_BUILDS_PATH
-	? path.join(process.cwd(), process.env.STATIC_BUILDS_PATH)
-	: path.join(process.cwd(), 'public', 'builds');
+export const STATIC_BUILDS_PATH = process.env.NODE_ENV === 'production'
+	? path.join('/tmp', 'builds')
+	: process.env.STATIC_BUILDS_PATH
+		? path.join(process.cwd(), process.env.STATIC_BUILDS_PATH)
+		: path.join(process.cwd(), 'public', 'builds');
 
-// Pre-built node_modules path
+// Pre-built node_modules path - this should still be in the project directory in both environments
 const TEMPLATE_PATH = path.join(process.cwd(), 'public', 'vite-project');
 const CACHED_MODULES_PATH = path.join(TEMPLATE_PATH, 'node_modules');
+const NODE_MODULES_COPY_TIMEOUT = 60000; // 60 seconds timeout for copying node_modules
 
 // Files to exclude when copying template
 const EXCLUDE_FROM_TEMPLATE = [
@@ -81,6 +90,25 @@ function shouldExclude(src: string): boolean {
 	return EXCLUDE_FROM_TEMPLATE.some(pattern => src.includes(pattern));
 }
 
+// Helper function to copy with timeout
+async function copyWithTimeout(src: string, dest: string, options: any, timeoutMs: number): Promise<void> {
+	return new Promise<void>((resolve, reject) => {
+		const timeoutId = setTimeout(() => {
+			reject(new Error(`Copy operation timed out after ${timeoutMs}ms`));
+		}, timeoutMs);
+
+		fs.cp(src, dest, options)
+			.then(() => {
+				clearTimeout(timeoutId);
+				resolve();
+			})
+			.catch((err) => {
+				clearTimeout(timeoutId);
+				reject(err);
+			});
+	});
+}
+
 export async function generateApp({
 	prompt,
 	name,
@@ -97,7 +125,22 @@ export async function generateApp({
 	const appId = crypto.randomUUID();
 	const appPath = path.join(APP_STORAGE_PATH, name);
 	const buildPath = path.join(STATIC_BUILDS_PATH, name);
-	const publicUrl = `/builds/${name}/index.html`;
+
+	// For development, static files are served directly from the filesystem
+	let publicUrl = `/builds/${name}/index.html`;
+
+	// In production, we'll update this with the blob URL
+	const isProd = process.env.NODE_ENV === 'production';
+	let blobStorage = null;
+
+	// Only try to use blob storage if in production and the token exists
+	if (isProd && process.env.BLOB_READ_WRITE_TOKEN &&
+		process.env.BLOB_READ_WRITE_TOKEN !== "null" &&
+		process.env.BLOB_READ_WRITE_TOKEN !== "") {
+		blobStorage = new BlobStorage();
+	} else if (isProd) {
+		console.warn("Running in production mode but BLOB_READ_WRITE_TOKEN is not set. Using local filesystem storage.");
+	}
 
 	const app: GeneratedApp = {
 		id: appId,
@@ -108,6 +151,14 @@ export async function generateApp({
 		status: 'generating',
 		dependencies: [],
 	};
+
+	// Save initial app record to database
+	try {
+		await saveGeneratedApp(app);
+	} catch (error) {
+		console.warn("Failed to save initial app to database:", error);
+		// Continue even if database save fails
+	}
 
 	try {
 		// Ensure clean state
@@ -136,17 +187,31 @@ export async function generateApp({
 
 		if (hasCachedModules) {
 			console.log('Using cached node_modules');
-			await fs.cp(CACHED_MODULES_PATH, appModulesPath, { recursive: true });
-			// Quick install to ensure everything is linked correctly
-			await execAsync('pnpm install --prefer-offline --no-frozen-lockfile', {
-				cwd: appPath,
-				env: { ...process.env, NODE_ENV: 'production' },
-			});
+			try {
+				await copyWithTimeout(CACHED_MODULES_PATH, appModulesPath, { recursive: true }, NODE_MODULES_COPY_TIMEOUT);
+				notify("Installing dependencies", 50);
+				// Quick install to ensure everything is linked correctly
+				await execAsync('pnpm install --prefer-offline --no-frozen-lockfile', {
+					cwd: appPath,
+					env: { ...process.env, NODE_ENV: 'production' },
+					timeout: 60000, // 60 second timeout for pnpm install
+				});
+			} catch (error) {
+				console.warn(`Error copying node_modules: ${error instanceof Error ? error.message : String(error)}`);
+				console.log('Falling back to normal install');
+				// If copying fails, fall back to a normal install
+				await execAsync('pnpm install --prefer-offline', {
+					cwd: appPath,
+					env: { ...process.env, NODE_ENV: 'production' },
+					timeout: 120000, // 2 minute timeout for full install
+				});
+			}
 		} else {
 			console.log('No cached node_modules, performing full install');
 			await execAsync('pnpm install --prefer-offline', {
 				cwd: appPath,
 				env: { ...process.env, NODE_ENV: 'production' },
+				timeout: 120000, // 2 minute timeout for full install
 			});
 		}
 
@@ -174,8 +239,39 @@ export async function generateApp({
 		await fs.mkdir(buildPath, { recursive: true });
 		await fs.cp(distPath, buildPath, { recursive: true });
 
+		// If in production, upload to blob storage
+		if (isProd && blobStorage) {
+			notify("Uploading to storage", 95);
+			try {
+				// Upload the build files to blob storage
+				const fileMap = await blobStorage.uploadDirectory(buildPath, name);
+
+				// Find the index.html file URL to use as the public URL
+				for (const [filePath, url] of fileMap.entries()) {
+					if (filePath.endsWith('index.html')) {
+						publicUrl = url;
+						break;
+					}
+				}
+
+				// Update the app with the blob URL
+				app.publicUrl = publicUrl;
+			} catch (uploadError) {
+				console.error("Failed to upload to blob storage:", uploadError);
+				// Continue with local file URL if upload fails
+			}
+		}
+
 		app.status = 'ready';
 		notify("Complete", 100);
+
+		// Update the database with the final app state
+		try {
+			await saveGeneratedApp(app);
+		} catch (dbError) {
+			console.warn("Failed to update app in database:", dbError);
+			// Continue even if database save fails
+		}
 	} catch (error) {
 		console.error('Error generating app:', error);
 		// Cleanup on error
@@ -186,6 +282,14 @@ export async function generateApp({
 
 		app.status = 'error';
 		app.error = error instanceof Error ? error.message : 'Unknown error';
+
+		// Update the database with the error state
+		try {
+			await updateGeneratedAppStatus(app.id, 'error', app.error);
+		} catch (dbError) {
+			console.warn("Failed to update error status in database:", dbError);
+		}
+
 		throw error;
 	}
 

@@ -29,7 +29,7 @@ export default function GlobalError({
 
 	return (
 		/* Note: Must include html and body tags since this replaces the entire page */
-		<RootLayout>
+		<>
 			<Boundary title="Something went wrong!" actionText="Try again" onAction={resetAction}>
 				{process.env.NODE_ENV === "development" && (
 					<div className="text-xs">
@@ -37,6 +37,6 @@ export default function GlobalError({
 					</div>
 				)}
 			</Boundary>
-		</RootLayout>
+		</>
 	);
 }
