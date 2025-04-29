@@ -2,6 +2,7 @@
 
 # v2
 generated-apps/*
+public/generated-apps/*
 public/builds/*
 
 # dependencies
